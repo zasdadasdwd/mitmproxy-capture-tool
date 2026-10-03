@@ -1,0 +1,70 @@
+"""窗口入口生命周期测试：复用服务与自建服务拥有不同退出责任。"""
+
+from unittest.mock import Mock
+
+import pytest
+
+from capture.desktop.window import DesktopBackend
+from config import ROOT
+
+
+def backend_with_status(status):
+    backend = DesktopBackend(ROOT / "startup.toml")
+    backend.client.close()
+    backend.client = Mock()
+    backend.client.get.return_value = Mock(
+        status_code=200, json=Mock(return_value=status)
+    )
+    return backend
+
+
+def test_existing_service_is_not_stopped(monkeypatch):
+    backend = backend_with_status({"runtime_id": "test", "project_root": str(ROOT)})
+    spawn = Mock()
+    monkeypatch.setattr("capture.desktop.window.subprocess.Popen", spawn)
+    backend.start()
+    backend.close()
+    spawn.assert_not_called()
+    backend.client.close.assert_called_once()
+
+
+def test_other_project_is_not_reused():
+    backend = backend_with_status(
+        {"runtime_id": "test", "project_root": "/other/project"}
+    )
+    with pytest.raises(RuntimeError, match="其他项目"):
+        backend.start()
+    backend.close()
+
+
+def test_owned_service_receives_graceful_shutdown():
+    backend = backend_with_status({})
+    backend.process = Mock()
+    backend.process.poll.return_value = None
+    backend.close()
+    backend.process.terminate.assert_called_once()
+    backend.process.wait.assert_called_once_with(timeout=20)
+    backend.process.kill.assert_not_called()
+
+
+def test_new_service_uses_current_interpreter_without_browser(monkeypatch):
+    """窗口新建服务必须使用当前环境，避免 Hook 依赖在独立打包环境中丢失。"""
+    import sys
+
+    backend = backend_with_status({})
+    monkeypatch.setattr(backend, "ready", Mock(side_effect=[False, True]))
+    process = Mock()
+    process.poll.return_value = None
+    spawn = Mock(return_value=process)
+    monkeypatch.setattr("capture.desktop.window.subprocess.Popen", spawn)
+    backend.start()
+    command = spawn.call_args.args[0]
+    assert command == [
+        sys.executable,
+        str(ROOT / "main.py"),
+        "--config",
+        str(ROOT / "startup.toml"),
+        "--no-browser",
+    ]
+    assert spawn.call_args.kwargs["cwd"] == ROOT
+    backend.close()

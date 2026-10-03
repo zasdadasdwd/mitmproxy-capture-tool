@@ -10,3 +10,5 @@ capture/support/research/cases/
 capture/support/docs/images/
 .DS_Store
 .ruff_cache/
+
+dist/

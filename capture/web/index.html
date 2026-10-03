@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>流量工作台 · Capture</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>流量工作台 · 天机阁</title>
+    <link rel="icon" type="image/png" href="/favicon.png?v=20261004" />
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css?v=20261002-detail-actions-e" />
   </head>
@@ -21,8 +21,8 @@
         ☰
       </button>
       <div class="brand">
-        <img class="logo" src="/favicon.svg" alt="Capture" />
-        <div><strong>Capture</strong><small>流量工作台</small></div>
+        <img class="logo" src="/favicon.png?v=20261004" alt="天机阁" />
+        <div><strong>天机阁</strong><small>观流溯源，洞悉天机</small></div>
       </div>
       <span id="engineStatus" class="badge">代理已停止</span
       ><span id="proxyAddress"></span
@@ -670,6 +670,14 @@
                   download="capture-ca.pem"
                   >下载证书</a
                 >
+              </div>
+              <div class="setting-row" id="macCertificateRow" hidden>
+                <div>
+                  <strong>安装并信任 macOS 证书</strong>
+                  <p>导入运行此工具的 Mac 登录钥匙串，授予当前用户 SSL 信任。请按系统提示确认授权。</p>
+                  <small id="macCertificateStatus" role="status" class="muted"></small>
+                </div>
+                <button type="button" id="installMacCertificate">安装并信任</button>
               </div>
               <div class="setting-block">
                 <strong>证书指纹</strong>

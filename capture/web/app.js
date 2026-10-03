@@ -1201,9 +1201,37 @@ $("openSettings").onclick = action(async () => {
   const certificate = await json("/api/certificate/info");
   $("certificateInfo").textContent = certificate.available
     ? "CA SHA-256：" + certificate.sha256
-    : "证书尚未生成，请先开始一次抓包。";
+    : "证书尚未生成，请先启动代理。";
+  $("macCertificateRow").hidden = !certificate.macos_install_supported;
+  $("installMacCertificate").disabled = !certificate.available || macCertificateInstalling;
+  $("installMacCertificate").dataset.sha256 = certificate.sha256 || "";
 });
 $("mobileSettings").onclick = () => $("openSettings").click();
+
+let macCertificateInstalling = false;
+/** 安装只在用户点击时发起，等待钥匙串授权期间阻止重复提交。 */
+$("installMacCertificate").onclick = action(async () => {
+  const button = $("installMacCertificate");
+  macCertificateInstalling = true;
+  button.disabled = true;
+  button.textContent = "等待系统授权…";
+  $("macCertificateStatus").textContent = "请查看 macOS 的授权窗口，确认当前 CA 的安装与 SSL 信任。";
+  try {
+    const result = await json("/api/certificate/macos/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sha256: button.dataset.sha256 }),
+    });
+    $("macCertificateStatus").textContent = result.message + "。请重新建立客户端连接。";
+  } catch (error) {
+    $("macCertificateStatus").textContent = error.message;
+    throw error;
+  } finally {
+    macCertificateInstalling = false;
+    button.disabled = false;
+    button.textContent = "安装并信任";
+  }
+});
 
 /** Hook 列表在设置草稿中排序和开关，保存前不会改变代理行为。 */
 function renderHookList() {

@@ -49,6 +49,9 @@ def main():
     parser.add_argument(
         "--config", type=Path, default=ROOT / "startup.toml", help="启动配置 TOML 路径"
     )
+    parser.add_argument(
+        "--no-browser", action="store_true", help="仅启动服务，不自动打开浏览器"
+    )
     args = parser.parse_args()
     path = args.config.resolve()
     if not path.exists():
@@ -82,7 +85,7 @@ def main():
                 port=startup.web.port,
                 timeout_graceful_shutdown=5,
             ),
-            open_browser=startup.web.open_browser,
+            open_browser=startup.web.open_browser and not args.no_browser,
         )
         server.run()
     finally:

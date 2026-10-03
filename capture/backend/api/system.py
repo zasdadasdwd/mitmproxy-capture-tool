@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from capture.backend.context import workbench
 from capture.backend.network import proxy_addresses
 from capture.plugins.base import hook_catalog
-from config import Settings, save_settings
+from config import ROOT, Settings, save_settings
 
 router = APIRouter()
 
@@ -19,6 +19,7 @@ def status(request: Request):
     return {
         **state.engine.status(),
         "runtime_id": state.runtime_id,
+        "project_root": str(ROOT),
         "network": proxy_addresses(state.settings),
         "settings": state.settings.model_dump(),
         "replay_jobs": list(state.jobs),

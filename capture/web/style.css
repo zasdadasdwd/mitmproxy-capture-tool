@@ -682,8 +682,11 @@ header {
   width: 34px;
   height: 34px;
   border-radius: 11px;
-  background: var(--primary);
-  color: var(--primary-text);
+  /* 保持图标透明边缘，深浅主题均不额外绘制底色。 */
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  object-fit: contain;
 }
 .brand strong {
   font-size: 19px;

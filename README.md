@@ -58,6 +58,32 @@ python3 -m venv .venv
 
 参数匹配和时序关系用于提供分析证据，候选来源需要开发者结合业务核实；加密后的参数也可能由客户端本地计算产生。
 
+## macOS 窗口启动
+
+浏览器入口仍为 `python main.py`。App 窗口使用同一套源码、配置、抓包数据和 Python 环境，无需打包成独立 Python 应用：
+
+```bash
+python -m pip install -r capture/desktop/requirements.txt
+python app_main.py
+```
+
+窗口使用系统 WebKit，不启动浏览器；设置、重放、分析、证书安装与下载仍使用原来的功能。第三方 Hook 继续在项目环境中开发，并通过 `startup.toml` 注册。自定义启动配置可使用 `app_main.py --config 路径`。
+
+生成 Finder 双击启动器：
+
+```bash
+python capture/support/scripts/build_app_launcher.py
+open dist/天机阁.app
+```
+
+生成前先激活要使用的 Python 环境；环境可以是任意名称的虚拟环境或 Conda，不要求叫 `.venv`。默认记录运行生成脚本的解释器，也可以显式选择：
+
+```bash
+python capture/support/scripts/build_app_launcher.py --python "/路径/自定义环境/bin/python"
+```
+
+所选环境需安装 `requirements.txt` 和 `capture/desktop/requirements.txt`。启动器依赖本机项目路径与所选解释器，移动项目或环境后重新生成。启动失败查看 `data/logs/app-launcher.log` 或 `desktop-window.log`。窗口复用同项目已运行的服务时，关闭窗口会保留服务；若服务由窗口创建，退出窗口会保存会话并关闭该服务和代理，请同时关闭客户端手动代理。浏览器入口和窗口入口共享一套服务配置。
+
 ## 配置
 
 | 文件 | 作用 | 生效方式 |
@@ -137,6 +163,7 @@ Hook 模块集合在完整启动时固定；修改模块列表或源码后需完
 
 ```text
 mitmproxy-capture-tool/
+├── app_main.py               # App 窗口启动入口
 ├── main.py                   # Web 服务启动入口
 ├── mcp_server.py             # MCP 启动入口
 ├── config.py                 # 配置模型与默认配置字典
@@ -152,6 +179,7 @@ mitmproxy-capture-tool/
 │   │   ├── links/            # 独立进程链路分析、全文搜索与任务管理
 │   │   ├── context.py        # 依赖组合与服务生命周期
 │   │   └── storage.py        # SQLite 会话与正文存储
+│   ├── desktop/              # 可选 WebKit 窗口，复用项目 Python 环境
 │   ├── engine/               # 代理进程、采集、TLS 策略与 Hook 执行
 │   ├── plugins/              # BaseHook、自动注册与内置处理器
 │   ├── web/                  # Web 页面、交互脚本与样式
