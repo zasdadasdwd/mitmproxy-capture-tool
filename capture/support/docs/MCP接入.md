@@ -49,6 +49,8 @@ port = 8766
 entrypoint = "capture.agent_mcp.server:main"
 ```
 
+浏览器入口 `python main.py` 和 App 入口 `python app_main.py` 共用此配置。App 创建后端时会同时启动 MCP，退出时关闭自己创建的 Web 与 MCP。App 复用已运行的浏览器后端时，服务仍由原后端管理，关闭窗口不会停止它。若修改配置前后端已经启动，需要先重启后端再生效。
+
 stdio 应由 Agent 客户端启动，不能与 Web 服务混用标准输入输出。MCP 与 Web 端口不能相同；HTTP MCP 仅绑定本机。多客户端查询各自传入明确的会话与请求标识，不共享 UI 的当前选择。
 
 命令行还支持 `--api-url http://127.0.0.1:8765` 与 `--log-file /absolute/path/mcp.jsonl`。

@@ -13,8 +13,8 @@ autostart = false
 
 [mcp]
 # true 可随工作台启动 HTTP MCP；stdio 由 Agent 客户端独立启动。
-enabled = false
-transport = "stdio"           # stdio / streamable-http
+enabled = true
+transport = "streamable-http" # 随工作台启动；stdio 仍可由 Agent 单独启动。
 host = "127.0.0.1"            # HTTP transport 的监听地址
 port = 8766                   # HTTP transport 的监听端口
 entrypoint = "capture.agent_mcp.server:main"

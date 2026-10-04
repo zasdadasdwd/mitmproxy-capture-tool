@@ -75,13 +75,15 @@ class ExportOptions(BaseModel):
     """导出必须明确指定记录 ID 和格式，不包含实时新增记录。"""
 
     ids: list[str] = Field(min_length=1, max_length=1000)
-    format: Literal["curl", "python", "har", "csv", "json"]
+    format: Literal["curl", "python", "requests", "har", "csv", "json"]
 
 
 @router.post("/api/sessions/{session_id}/export")
 def export(session_id: str, options: ExportOptions, request: Request):
-    """导出选中流量为 cURL、Python/httpx、HAR、CSV 或自有 JSON。"""
-    extension = {"curl": "sh", "python": "py"}.get(options.format, options.format)
+    """导出选中流量为 cURL、Python/httpx、Python/requests、HAR、CSV 或 JSON。"""
+    extension = {"curl": "sh", "python": "py", "requests": "py"}.get(
+        options.format, options.format
+    )
     with tempfile.NamedTemporaryFile(
         prefix="capture-export-", suffix="." + extension, delete=False
     ) as temporary:

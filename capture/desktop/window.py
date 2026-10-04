@@ -41,7 +41,7 @@ class DesktopBackend:
             return False
 
     def start(self):
-        """使用当前解释器启动 main.py，保留 Hook 所需环境且禁止打开浏览器。"""
+        """共用 main.py 的 Web/MCP 自动启动配置，保留 Hook 环境且禁止打开浏览器。"""
         if self.ready():
             return
         log_path = DATA / "logs/desktop-window.log"

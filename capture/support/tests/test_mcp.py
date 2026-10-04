@@ -348,6 +348,8 @@ def test_stdio_protocol_and_error_audit(tmp_path):
             command=sys.executable,
             args=[
                 str(ROOT / "mcp_server.py"),
+                "--transport",
+                "stdio",
                 "--api-url",
                 "http://127.0.0.1:1",
                 "--log-file",

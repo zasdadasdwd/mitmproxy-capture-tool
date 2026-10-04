@@ -26,12 +26,25 @@ def open_console(url):
     logger.warning("无法自动打开浏览器，请手动访问抓包控制台：%s", url)
 
 
+def stop_mcp(process):
+    """关闭本次工作台创建的 MCP；重复收尾或已经退出时不再发送信号。"""
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
 class ConsoleServer(uvicorn.Server):
     """在服务真正开始监听后打开控制台，浏览器操作不阻塞服务。"""
 
-    def __init__(self, config, open_browser=True):
+    def __init__(self, config, open_browser=True, mcp_process=None):
         super().__init__(config)
         self.open_browser = open_browser
+        self.mcp_process = mcp_process
 
     async def startup(self, sockets=None):
         """等待 Uvicorn 启动成功，再在后台打开当前监听端口。"""
@@ -41,6 +54,14 @@ class ConsoleServer(uvicorn.Server):
             threading.Thread(
                 target=open_console, args=(url,), name="console-browser", daemon=True
             ).start()
+
+    async def shutdown(self, sockets=None):
+        """App 退出的 SIGTERM 可能被 Uvicorn 再次发出，先在服务收尾阶段关闭 MCP。"""
+        try:
+            await super().shutdown(sockets=sockets)
+        finally:
+            stop_mcp(self.mcp_process)
+            self.mcp_process = None
 
 
 def main():
@@ -86,16 +107,11 @@ def main():
                 timeout_graceful_shutdown=5,
             ),
             open_browser=startup.web.open_browser and not args.no_browser,
+            mcp_process=mcp_process,
         )
         server.run()
     finally:
-        if mcp_process:
-            mcp_process.terminate()
-            try:
-                mcp_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                mcp_process.kill()
-                mcp_process.wait()
+        stop_mcp(mcp_process)
 
 
 if __name__ == "__main__":

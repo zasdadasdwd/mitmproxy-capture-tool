@@ -1178,7 +1178,7 @@ $("export").onclick = action(async () => {
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url;
-  link.download = "capture." + ({ curl: "sh", python: "py" }[format] || format);
+  link.download = "capture." + ({ curl: "sh", python: "py", requests: "py" }[format] || format);
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
