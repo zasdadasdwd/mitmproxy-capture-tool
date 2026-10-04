@@ -770,6 +770,16 @@ function renderDetail() {
   $("detailSummary").textContent = flow
     ? `${flow.method} ${flow.url}\n${statusNames[flow.status] || flow.status} · ${flow.source === "replay" ? "重放" : "抓包"}${flow.reason ? " · " + flow.reason : ""}`
     : "正在加载请求详情…";
+  const query = parseQueryParameters(flow?.[state.tab]?.url || flow?.url || "");
+  const queryOutput = $("detailQueryJson");
+  const queryKey = `${state.activeId}:${state.tab}`;
+  if (queryOutput.dataset.requestKey !== queryKey) queryOutput.hidden = true;
+  queryOutput.dataset.requestKey = queryKey;
+  $("detailQueryToggle").hidden = query.count === 0;
+  $("detailQueryCopy").hidden = query.count === 0;
+  $("detailQueryJson").textContent = query.json;
+  if (!query.count) queryOutput.hidden = true;
+  $("detailQueryToggle").textContent = queryOutput.hidden ? "查看 Query JSON" : "收起 Query JSON";
   const message = flow?.[state.tab];
   $("detailReplay").disabled =
     !flow?.request || flow.request.truncated || flow.status === "pending";
@@ -806,8 +816,12 @@ function renderDetail() {
           : "正在读取报文…",
       );
     $("detailNotice").textContent = notice.join(" ");
+    const decodedBody = decodeRequestBody(message);
     $("detailContent").textContent =
-      message?.body_text || (message ? "（空正文）" : "暂无正文内容");
+      decodedBody.readable || (message ? "（空正文）" : "暂无正文内容");
+    if (decodedBody.changed && !message?.truncated)
+      notice.push("请求正文已执行 URL 解码，完整原始内容可在“完整查看”中切换查看。");
+    $("detailNotice").textContent = notice.join(" ");
   }
   $("detailMessage").hidden = state.tab === "info";
 }
@@ -829,6 +843,15 @@ $("detailCopyHeaders").onclick = () =>
   );
 $("detailCopyBody").onclick = () =>
   copyMessageText(state.detail?.[state.tab]?.body_text || "");
+$("detailQueryToggle").onclick = () => {
+  const output = $("detailQueryJson");
+  output.hidden = !output.hidden;
+  $("detailQueryToggle").textContent = output.hidden
+    ? "查看 Query JSON"
+    : "收起 Query JSON";
+};
+$("detailQueryCopy").onclick = () =>
+  copyMessageText($("detailQueryJson").textContent);
 
 /** 完整报文按需读取，不受侧栏 64 KiB 预览限制。 */
 $("openFullRequest").onclick = action(async () => {

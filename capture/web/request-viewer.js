@@ -30,6 +30,120 @@ function renderMessageHeaders(target, message) {
   target.append(table);
 }
 
+/** 解码额外的百分号编码层；加号仅由 URLSearchParams 在第一层处理。 */
+function decodeParameterText(text) {
+  for (let depth = 0; depth < 3 && /%[\da-f]{2}/i.test(text); depth++) {
+    // 一旦已是合法 JSON，就停止 URL 解码，保护内部字符串的字面 %xx。
+    try { JSON.parse(text); break; } catch { /* 仍可能是编码后的 JSON。 */ }
+    try {
+      const next = decodeURIComponent(text);
+      if (next === text) break;
+      text = next;
+    } catch {
+      break; // 非法转义保留原文，不丢弃参数。
+    }
+  }
+  return text;
+}
+
+/** 展开嵌套的 JSON 对象/数组，保留 token、数字字符串及布尔字符串的类型。 */
+function expandParameterJson(value, depth = 0, decodeText = true) {
+  if (depth >= 8) return value;
+  if (typeof value === "string") {
+    const text = decodeParameterText(value);
+    let nested = text;
+    try {
+      // 支持 JSON 再包一层字符串，但不把普通标量字符串转换成其他类型。
+      for (let layer = depth; layer < 8 && typeof nested === "string"; layer++)
+        nested = JSON.parse(nested);
+      if (nested !== null && typeof nested === "object")
+        return expandParameterJson(nested, depth + 1, false);
+    } catch {
+      // 普通字符串不需要 JSON 解析。
+    }
+    return decodeText ? text : value;
+  }
+  if (Array.isArray(value))
+    return value.map((item) => expandParameterJson(item, depth + 1, false));
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      [key, expandParameterJson(item, depth + 1, false)],
+    ));
+  return value;
+}
+
+/** 同名参数按出现次数分组，避免把单个参数的 JSON 数组当作重复参数列表。 */
+function collectParameters(params) {
+  const groups = new Map();
+  let count = 0;
+  for (const [key, value] of params) {
+    count++;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(expandParameterJson(value));
+  }
+  return {
+    count,
+    value: Object.fromEntries([...groups].map(([key, values]) =>
+      [key, values.length === 1 ? values[0] : values],
+    )),
+  };
+}
+
+/** 解码正文并识别表单/JSON；有效 JSON 优先，不把 JSON 中的 URL 当表单。 */
+function decodeRequestBody(message) {
+  const raw = message?.body_text || "";
+  const contentType = (message?.headers || []).find(
+    ([key]) => key.toLowerCase() === "content-type",
+  )?.[1] || "";
+  let decoded = raw;
+  let parsed = null;
+  let validJson = false;
+  let form = false;
+  try {
+    parsed = JSON.parse(raw);
+    validJson = true;
+  } catch {
+    const explicitForm = /application\/x-www-form-urlencoded/i.test(contentType);
+    const inferredForm = !/json/i.test(contentType) &&
+      /^[^&=\s{}\[\]<>]+=[\s\S]*$/.test(raw);
+    if (explicitForm || inferredForm) {
+      form = true;
+      const params = new URLSearchParams(raw);
+      parsed = collectParameters(params).value;
+      validJson = true;
+      // URLSearchParams 已处理首层 + 和百分号转义，此后不得再次替换 +。
+      decoded = raw.replaceAll("+", " ");
+      try { decoded = decodeURIComponent(decoded); } catch { /* 保留非法转义。 */ }
+    } else {
+      decoded = decodeParameterText(raw);
+      try {
+        parsed = JSON.parse(decoded);
+        validJson = true;
+      } catch { /* 非 JSON 正文保留解码后的文本。 */ }
+    }
+  }
+  if (validJson && !form) parsed = expandParameterJson(parsed, 0, false);
+  return {
+    changed: decoded !== raw,
+    form,
+    parsed,
+    validJson,
+    // 树和原文模式不提前 stringify 大正文，实际读取文本时才生成。
+    get readable() { return validJson ? JSON.stringify(parsed, null, 2) : decoded; },
+  };
+}
+
+/** Query 参数先按 URL 规则解码，再展开 JSON；重复参数保留独立的值。 */
+function parseQueryParameters(url) {
+  try {
+    const query = new URL(url, window.location.href).searchParams;
+    const result = collectParameters(query);
+    return { count: result.count, json: JSON.stringify(result.value, null, 2) };
+  } catch {
+    return { count: 0, json: "{}" };
+  }
+}
+
 /** 复制当前分区的原始文本；权限不足时保留手动复制提示。 */
 async function copyMessageText(text) {
   try {
@@ -47,6 +161,8 @@ class RequestViewer {
     this.flow = null;
     this.part = "request";
     this.parsed = null;
+    this.queryExpanded = false;
+    this.queryJson = "{}";
     this.copyContent = "";
     this.sequence = 0;
     this.session = null;
@@ -85,6 +201,15 @@ class RequestViewer {
         `${firstLine}\n${(message.headers || []).map(([key, value]) => `${key}: ${value}`).join("\n")}\n\n${message.body_text || ""}`,
       );
     };
+    document.getElementById("viewerQueryToggle").onclick = () => {
+      this.queryExpanded = !this.queryExpanded;
+      document.getElementById("viewerQueryJson").hidden = !this.queryExpanded;
+      document.getElementById("viewerQueryToggle").textContent = this.queryExpanded
+        ? "收起 Query JSON"
+        : "查看 Query JSON";
+    };
+    document.getElementById("viewerQueryCopy").onclick = () =>
+      copyMessageText(this.queryJson);
     document.getElementById("viewerCollapse").onclick = () => {
       this.dialog
         .querySelectorAll(".json-tree details[open]")
@@ -97,10 +222,21 @@ class RequestViewer {
       this.flow = null;
       this.parsed = null;
       this.copyContent = "";
+      this.resetQuery();
       document.getElementById("viewerRaw").textContent = "";
       document.getElementById("viewerHeaders").replaceChildren();
       document.getElementById("viewerTree").replaceChildren();
     });
+  }
+
+  /** 加载或关闭时清理旧请求的 Query，避免失败后仍显示上一次的参数。 */
+  resetQuery() {
+    this.queryExpanded = false;
+    this.queryJson = "{}";
+    document.getElementById("viewerQueryJson").textContent = "";
+    document.getElementById("viewerQueryJson").hidden = true;
+    document.getElementById("viewerQueryToggle").hidden = true;
+    document.getElementById("viewerQueryCopy").hidden = true;
   }
 
   /** 先展示加载状态；关闭弹窗后丢弃迟到响应，避免保留大正文。 */
@@ -110,6 +246,7 @@ class RequestViewer {
     this.session = session;
     this.id = id;
     this.part = part;
+    this.resetQuery();
     document.getElementById("viewerReplay").disabled = true;
     document.getElementById("viewerEditReplay").disabled = true;
     renderMessageHeaders(document.getElementById("viewerHeaders"), null);
@@ -166,6 +303,7 @@ class RequestViewer {
     const mode = document.getElementById("viewerMode");
     const raw = document.getElementById("viewerRaw");
     const tree = document.getElementById("viewerTree");
+    const decodedBody = decodeRequestBody(message);
     const replayable =
       !!this.flow.request &&
       !this.flow.request.truncated &&
@@ -191,6 +329,15 @@ class RequestViewer {
     });
     document.getElementById("viewerUrl").textContent =
       `${response ? `${message?.http_version || "HTTP"} ${this.flow.code || ""} · ` : `${message?.method || this.flow.method || ""} `}${message?.url || this.flow.url || ""}`;
+    const query = parseQueryParameters(message?.url || this.flow.url || "");
+    this.queryJson = query.json;
+    document.getElementById("viewerQueryToggle").hidden = query.count === 0;
+    document.getElementById("viewerQueryCopy").hidden = query.count === 0;
+    document.getElementById("viewerQueryJson").hidden = query.count === 0 || !this.queryExpanded;
+    document.getElementById("viewerQueryJson").textContent = this.queryJson;
+    document.getElementById("viewerQueryToggle").textContent = this.queryExpanded
+      ? "收起 Query JSON"
+      : "查看 Query JSON";
     let validJson = false;
     this.parsed = null;
     if (
@@ -199,18 +346,21 @@ class RequestViewer {
       !message.display_truncated &&
       !message.decode_error
     ) {
-      try {
-        this.parsed = JSON.parse(message.body_text || "");
-        validJson = true;
-      } catch {
-        /* 非 JSON 报文继续使用完整报文视图。 */
-      }
+      this.parsed = decodedBody.parsed;
+      validJson = decodedBody.validJson;
     }
-    for (const option of mode.options)
-      option.disabled = option.value !== "raw" && !validJson;
+    for (const option of mode.options) {
+      option.disabled =
+        (option.value === "formatted" || option.value === "tree") &&
+        !validJson;
+      if (option.value === "decoded") option.disabled = !decodedBody.changed;
+    }
     if (resetMode)
-      mode.value = validJson && this.part === "response" ? "tree" : "raw";
-    if (!validJson) mode.value = "raw";
+      mode.value =
+        validJson && (decodedBody.changed || this.part === "response")
+          ? "tree"
+          : "raw";
+    if (!validJson && mode.value !== "decoded") mode.value = "raw";
     const notice = [];
     if (!message)
       notice.push(
@@ -227,6 +377,8 @@ class RequestViewer {
       );
     if (message?.decode_error)
       notice.push("正文解码失败，以下展示原始字节的文本视图。");
+    if (decodedBody.changed && !message?.truncated && !message?.display_truncated)
+      notice.push("检测到 URL 编码，已解码并尝试解析其中的 JSON；原始正文可切换查看。");
     const jsonHeader = message?.headers?.some(
       ([key, value]) =>
         key.toLowerCase() === "content-type" && /json/i.test(value),
@@ -248,6 +400,9 @@ class RequestViewer {
       this.copyContent = message?.body_text || "";
       raw.textContent =
         this.copyContent || (message ? "（空正文）" : "暂无正文内容");
+    } else if (mode.value === "decoded") {
+      this.copyContent = decodedBody.readable;
+      raw.textContent = this.copyContent || "（空正文）";
     } else {
       // 树视图不提前格式化整段正文，复制或切换文本时才生成大字符串。
       this.copyContent =

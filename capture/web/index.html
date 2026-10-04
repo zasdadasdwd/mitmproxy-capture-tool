@@ -6,7 +6,7 @@
     <title>流量工作台 · 天机阁</title>
     <link rel="icon" type="image/png" href="/favicon.png?v=20261004" />
     <script src="/theme.js"></script>
-    <link rel="stylesheet" href="/style.css?v=20261002-detail-actions-e" />
+    <link rel="stylesheet" href="/style.css?v=20261004-review1" />
   </head>
   <body>
     <header>
@@ -339,6 +339,13 @@
               </div>
               <div id="detailSummary" class="detail-summary muted">
                 选择一条记录查看详情
+              </div>
+              <div class="query-preview">
+                <button id="detailQueryToggle" type="button" hidden>
+                  查看 Query JSON
+                </button>
+                <button id="detailQueryCopy" type="button" hidden>复制 Query JSON</button>
+                <pre id="detailQueryJson" hidden></pre>
               </div>
               <div class="tabs" role="group" aria-label="请求详情内容">
                 <button data-tab="request" class="active" aria-pressed="true">发送请求</button
@@ -871,7 +878,18 @@
           ✕
         </button>
       </div>
-      <div id="viewerUrl" class="viewer-url"></div>
+      <div class="viewer-url-wrap">
+        <div id="viewerUrl" class="viewer-url"></div>
+        <div class="query-preview">
+          <button id="viewerQueryToggle" type="button" hidden>
+            查看 Query JSON
+          </button>
+          <button id="viewerQueryCopy" type="button" hidden>
+            复制 Query JSON
+          </button>
+          <pre id="viewerQueryJson" hidden></pre>
+        </div>
+      </div>
       <div class="viewer-toolbar">
         <div class="tabs" aria-label="查看内容">
           <button type="button" data-viewer-part="request">发送请求</button>
@@ -905,6 +923,7 @@
         <strong id="viewerBodyTitle">请求体</strong>
         <select id="viewerMode" aria-label="正文显示方式">
           <option value="raw">原始正文</option>
+          <option value="decoded" disabled>URL 解码</option>
           <option value="formatted">JSON 格式化</option>
           <option value="tree">JSON 树</option>
         </select>
@@ -933,9 +952,10 @@
       </div>
     </dialog>
     <div id="toast" role="status"></div>
-    <script src="/request-viewer.js?v=20261001-analysis-selection"></script>
+    <script src="/request-viewer.js?v=20261004-review1"></script>
     <script src="/sidebar.js"></script>
-    <script src="/app.js?v=20261002-detail-actions-c"></script>
+    <script src="/app.js?v=20261004-review1"></script>
     <script src="/detail-resizer.js?v=20261001-fine-resize"></script>
+    <script src="/table-resizer.js?v=20261004-review1"></script>
   </body>
 </html>
