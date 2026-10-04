@@ -361,7 +361,8 @@ def test_stdio_protocol_and_error_audit(tmp_path):
             stdio_client(parameters) as (read, write),
             ClientSession(read, write) as session,
         ):
-            await session.initialize()
+            initialized = await session.initialize()
+            assert initialized.serverInfo.name == "天机阁"
             tools = await session.list_tools()
             assert any(tool.name == "trace_parameter" for tool in tools.tools)
             result = await session.call_tool(
@@ -431,7 +432,8 @@ def test_real_http_mcp_transport(evidence, tmp_path):
                 ) as (read, write, _),
                 ClientSession(read, write) as session,
             ):
-                await session.initialize()
+                initialized = await session.initialize()
+                assert initialized.serverInfo.name == "天机阁"
                 result = await session.call_tool(
                     "search_requests",
                     {

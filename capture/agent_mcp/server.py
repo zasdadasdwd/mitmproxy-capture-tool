@@ -17,7 +17,7 @@ class CaptureMCP(FastMCP):
     """资源绑定进程/HTTP 应用，避免无状态调用提前关闭共享连接。"""
 
     def __init__(self, client, audit, **kwargs):
-        super().__init__("Capture", **kwargs)
+        super().__init__("天机阁", **kwargs)
         self.client = client
         self.audit = audit
 
