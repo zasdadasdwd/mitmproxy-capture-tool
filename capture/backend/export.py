@@ -13,19 +13,39 @@ from capture.backend.replay import prepare_request
 
 
 def curl_code(flow):
-    """生成经过 shell quoting 的 cURL；二进制正文通过 Base64 管道传入。"""
+    """浏览器风格多行 cURL；文本正文原样引用，二进制才使用字节管道。"""
     request = prepare_request(flow["request"])
-    command = ["curl", "--request", request["method"], "--url", request["url"]]
+
+    def quoted(value):
+        # 始终单引号，保留正文的空格、换行、百分号和 shell 元字符。
+        return "'" + value.replace("'", "'\"'\"'") + "'"
+
+    lines = ["curl " + quoted(request["url"])]
+    method = request["method"].upper()
+    if method == "HEAD":
+        lines.append("  --head")
+    elif method != "GET" or request["content"]:
+        lines.append("  -X " + shlex.quote(method))
     for name, value in request["headers"]:
-        command.extend(["--header", f"{name}: {value}"])
+        lines.append("  -H " + quoted(f"{name}: {value}"))
+    binary = False
     if request["content"]:
-        command.extend(["--data-binary", "@-"])
+        try:
+            text = request["content"].decode("utf-8")
+            binary = any(ord(char) < 32 and char not in "\r\n\t" for char in text)
+        except UnicodeDecodeError:
+            binary = True
+        lines.append("  --data-binary @-" if binary else "  --data-raw " + quoted(text))
+    if any(name.lower() == "accept-encoding" for name, _ in request["headers"]):
+        lines.append("  --compressed")
+    command = (" " + chr(92) + "\n").join(lines)
+    if binary:
         encoded = base64.b64encode(request["content"]).decode()
-        return (
+        command = (
             f"printf %s {shlex.quote(encoded)} | python3 -c 'import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read()))' | "
-            + shlex.join(command)
+            + command
         )
-    return shlex.join(command)
+    return command
 
 
 def python_code(flows):
@@ -56,24 +76,31 @@ def requests_params_lines(flow, indent):
     """按 web_js 的参数字典格式生成请求；正文保留原始字节而非重新序列化。"""
     request = prepare_request(flow["request"])
     headers = {}
-    names = set()
+    duplicate = len({name.lower() for name, _ in request["headers"]}) != len(
+        request["headers"]
+    )
     for name, value in request["headers"]:
-        if name.lower() in names:
-            raise ValueError(
-                "requests 不支持重复请求头，请使用 Python / httpx 导出以保留原始请求"
-            )
-        names.add(name.lower())
         headers[name] = value
     try:
         body = repr(request["content"].decode("utf-8")) + ".encode()"
     except UnicodeDecodeError:
         body = repr(request["content"])
     yield f'{indent}"method": {request["method"]!r},'
-    yield f'{indent}"url": {request["url"]!r},'
-    yield f'{indent}"headers": {{'
-    for name, value in headers.items():
-        yield f"{indent}    {name!r}: {value!r},"
-    yield f"{indent}}},"
+    url = urlsplit(request["url"])
+    yield f'{indent}"url": {url._replace(query="", fragment="").geturl()!r},'
+    query = parse_qsl(url.query, keep_blank_values=True)
+    # 列表保留重复 Query；无重复时用字典便于编辑。
+    params = query if len({key for key, _ in query}) != len(query) else dict(query)
+    yield f'{indent}"params": {params!r},'
+    yield f'{indent}"raw_query": {url.query!r},  # params 未改动时保留原始编码。'
+
+    if duplicate:
+        yield f'{indent}"headers": {request["headers"]!r},  # 重复头保留为列表。'
+    else:
+        yield f'{indent}"headers": {{'
+        for name, value in headers.items():
+            yield f"{indent}    {name!r}: {value!r},"
+        yield f"{indent}}},"
     yield f'{indent}"data": {body},'
     yield f'{indent}"proxies": None,  # 需要代理时填写 http/https 代理地址。'
     yield f'{indent}"verify": True,'
@@ -92,6 +119,7 @@ def requests_lines(flows):
         "# 安装依赖：python -m pip install requests",
         "# URL 和正文保持采集内容；正文修改后 Content-Length 会自动计算。",
         "import requests",
+        "from urllib.parse import parse_qsl",
         "",
         "",
     ]
@@ -116,7 +144,8 @@ def requests_lines(flows):
             "def build_request_params(index=0):",
             '    """复制指定请求参数，方便单独编辑和发送。"""',
             "    params = dict(REQUESTS[index])",
-            '    params["headers"] = dict(params["headers"])',
+            '    params["headers"] = params["headers"].copy()',
+            '    params["params"] = params["params"].copy()',
             "    return params",
         ]
     yield from [
@@ -126,7 +155,30 @@ def requests_lines(flows):
         '    """发送请求并返回完整响应。"""',
         "    if params is None:",
         "        params = build_request_params()",
-        "    response = requests.request(**params)",
+        "    params = dict(params)",
+        "    raw_query = params.pop('raw_query', '')",
+        "    query = params.get('params', {})",
+        "    pairs = list(query.items()) if isinstance(query, dict) else list(query)",
+        "    if pairs == parse_qsl(raw_query, keep_blank_values=True):",
+        "        params['url'] += ('?' + raw_query) if raw_query else ''",
+        "        params.pop('params', None)",
+        "    headers = params.pop('headers')",
+        "    if isinstance(headers, dict):",
+        "        response = requests.request(headers=headers, **params)",
+        "    else:",
+        "        from urllib3 import HTTPHeaderDict",
+        "        # requests 的普通字典会合并重复头；在准备后用 urllib3 容器发送。",
+        "        with requests.Session() as session:",
+        "            options = {key: params.pop(key) for key in ('proxies', 'verify', 'timeout', 'allow_redirects')}",
+        "            prepared = session.prepare_request(requests.Request(**params))",
+        "            repeated = HTTPHeaderDict()",
+        "            for key, value in headers:",
+        "                repeated.add(key, value)",
+        "            for key, value in prepared.headers.items():",
+        "                if key not in repeated:",
+        "                    repeated.add(key, value)",
+        "            prepared.headers = repeated",
+        "            response = session.send(prepared, **options)",
         "    print(f'Response Url: {response.url}')",
         "    print(f'Response Status Code: {response.status_code}')",
         "    print(f'Response Content Length: {len(response.content)}')",
@@ -255,7 +307,7 @@ def har_entry(flow):
     }
 
 
-def write_export(store, session_id, ids, format, path):
+def write_export(store, session_id, ids, format, path, request_url=None):
     """逐条读取并写入导出文件，内存占用不随选中记录数累积。"""
 
     def records():
@@ -271,6 +323,10 @@ def write_export(store, session_id, ids, format, path):
                 raise ValueError(
                     "此格式仅支持 HTTP 请求，请取消选择连接记录；连接记录可导出 JSON 或 CSV"
                 )
+            if request_url is not None:
+                if not flow.get("request"):
+                    raise ValueError("连接记录无法修改请求 URL")
+                flow = {**flow, "request": {**flow["request"], "url": request_url}}
             yield flow
 
     with path.open("w", encoding="utf-8", newline="") as output:

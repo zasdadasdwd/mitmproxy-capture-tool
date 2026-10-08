@@ -6,7 +6,7 @@
     <title>流量工作台 · 天机阁</title>
     <link rel="icon" type="image/png" href="/favicon.png?v=20261004" />
     <script src="/theme.js"></script>
-    <link rel="stylesheet" href="/style.css?v=20261004-review1" />
+    <link rel="stylesheet" href="/style.css?v=20261008-live-delete" />
   </head>
   <body>
     <header>
@@ -122,6 +122,14 @@
         <section class="traffic">
           <div class="toolbar">
             <div class="toolbar-search">
+              <select id="quickSearchScope" aria-label="搜索范围">
+                  <option value="url">域名 / URL</option>
+                  <option value="headers">请求 / 响应 Headers</option>
+                  <option value="request_body">请求正文</option>
+                  <option value="response_body">响应正文</option>
+                  <option value="bodies">请求 / 响应正文</option>
+                  <option value="all">全部内容（含正文）</option>
+                </select>
               <input id="search" placeholder="搜索关键词…" aria-label="搜索流量" />
               <span id="total" class="muted">0 条记录</span>
             </div>
@@ -138,7 +146,7 @@
                 </div>
                 <div class="bulk-bar">
                   <span id="selectionCount">已选择 0 条</span
-                  ><button id="editRepeat">编辑并重放</button
+                  ><button id="compareSelected" type="button" disabled>对比选中（2 条）</button><button id="editRepeat">编辑并重放</button
                   ><label
                     >次数
                     <input
@@ -170,7 +178,7 @@
                   <button id="clearSession" type="button">清空当前记录</button>
                   <button id="deleteSession" type="button">删除当前批次</button>
                   <small class="muted"
-                    >正在抓包或重放时，请先停止；删除后无法恢复。</small
+                    >抓包中可删除请求或清空记录，新请求继续保存；删除整个批次需先停止。删除后无法恢复。</small
                   >
                 </div>
               </div>
@@ -178,10 +186,14 @@
             </div>
             <div id="filterPanel" class="filter-panel" hidden>
               <label
-                >关键词范围<select id="searchScope">
+                >关键词<input id="filterKeyword" placeholder="筛选关键词…" /></label>
+              <label>关键词范围<select id="searchScope">
                   <option value="url">域名 / URL</option>
                   <option value="headers">请求 / 响应 Headers</option>
-                  <option value="all">URL / Headers / 错误</option>
+                  <option value="request_body">请求正文</option>
+                  <option value="response_body">响应正文</option>
+                  <option value="bodies">请求 / 响应正文</option>
+                  <option value="all">全部内容（含正文）</option>
                 </select></label
               >
               <label
@@ -251,7 +263,7 @@
                   placeholder="不限"
               /></label>
               <div class="filter-help">
-                <span id="filterHelpText">条件之间为“同时满足”；关键词忽略大小写，不搜索正文。</span
+                <span id="filterHelpText">条件之间为“同时满足”；关键词忽略大小写，正文按已保存内容搜索。</span
                 ><button id="resetFilters">重置全部筛选</button>
               </div>
             </div>
@@ -274,8 +286,9 @@
                       <th>状态</th>
                       <th>方法</th>
                       <th>请求地址</th>
+                      <th id="timeSortHeader" aria-sort="none"><button id="sortStarted" class="sort-heading" type="button" title="按请求开始时间排序">请求时间 ↕</button></th>
                       <th>耗时</th>
-                      <th>大小</th>
+                      <th id="sizeSortHeader" aria-sort="none"><button id="sortSize" class="sort-heading" type="button" title="按响应正文大小排序">大小 ↕</button></th>
                       <th>重放</th>
                     </tr>
                   </thead>
@@ -329,6 +342,19 @@
                   分析 ✦</button>
                   <button id="detailReplay" type="button">重放</button>
                   <button id="detailEditReplay" type="button">编辑重放</button>
+<details class="detail-export-menu" data-compare-menu="detail">
+                  <summary>对比</summary><div class="detail-export-options">
+                  <button type="button" data-compare-action="baseline">设为对比基准</button>
+                  <button type="button" data-compare-action="compare" disabled>与基准对比</button>
+                  <button type="button" data-compare-action="source" hidden>与重放来源对比</button>
+                  </div></details>
+<details class="detail-export-menu">
+                  <summary>导出</summary>
+                  <div class="detail-export-options">
+                    <button type="button" id="detailExportCurl">cURL</button>
+                    <button type="button" id="detailExportRequests">requests</button>
+                  </div>
+                </details>
                 </div>
                 <details class="detail-policy-actions">
                   <summary>域名策略</summary>
@@ -352,8 +378,10 @@
                 <button data-tab="request" class="active" aria-pressed="true">发送请求</button
                 ><button data-tab="original_request" aria-pressed="false">原始请求</button
                 ><button data-tab="response" aria-pressed="false">响应</button
-                ><button data-tab="info" aria-pressed="false">连接信息</button>
+                ><button data-tab="info" aria-pressed="false">连接信息</button><button data-tab="websocket" aria-pressed="false" hidden>WebSocket</button>
               </div>
+              <div id="detailWebSocket" class="websocket-messages" hidden></div>
+              <div id="detailConnectionInfo" class="connection-info" hidden></div>
               <div id="detailMessage" class="message-layout">
                 <details class="message-headers" open>
                   <summary>
@@ -367,17 +395,15 @@
                   </div>
                   <div id="detailHeaders" class="message-header-table"></div>
                 </details>
-                <div class="message-section-bar">
-                  <strong id="detailBodyTitle">请求体</strong
-                  ><button id="detailCopyBody" type="button">复制正文</button>
-                </div>
-                <div
-                  id="detailNotice"
-                  class="viewer-notice"
-                  role="status"
-                ></div>
               </div>
-              <pre id="detailContent">请求体将在这里显示。</pre>
+              <details id="detailBodySection" class="message-body-section" open>
+                <summary class="message-section-bar">
+                  <strong id="detailBodyTitle">请求体</strong>
+                  <button id="detailCopyBody" type="button">复制正文</button><a id="detailDownloadBody" hidden>下载已保存原文</a>
+                </summary>
+                <div id="detailNotice" class="viewer-notice" role="status"></div>
+                <pre id="detailContent">请求体将在这里显示。</pre><div id="detailEvents" class="sse-events" hidden></div>
+              </details>
             </section>
           </div>
         </section>
@@ -544,6 +570,11 @@
                 </div>
                 <span class="setting-value">自动保存</span>
               </div>
+              <h4>抓包与存储</h4>
+              <div class="setting-row"><div><label for="bodyCacheLimit">常规正文缓存上限（KiB）</label><p>大正文保持流式转发，避免整份占用内存。</p></div><input id="bodyCacheLimit" type="number" min="1" max="16384" required /></div>
+              <p id="streamCaptureCompatibility" class="muted" hidden>当前后端尚未加载流式正文采集功能，需要重新启动工作台后使用。</p>
+              <div class="setting-row"><div><label for="saveStreamBodies">保存大正文与 SSE</label><p>后台异步落盘，磁盘慢或出错时继续转发并标记不完整。</p></div><input id="saveStreamBodies" type="checkbox" /></div>
+              <div class="setting-row"><div><label for="streamBodyLimit">每个流式正文保存上限（MiB）</label><p>超过上限保留已保存部分；设置仅影响之后的新请求。</p></div><input id="streamBodyLimit" type="number" min="1" max="512" required /></div>
               <div class="setting-row">
                 <div>
                   <strong>动画效果</strong>
@@ -842,20 +873,24 @@
             >URL（包括查询参数）<input id="editUrl" required
           /></label>
         </div>
-        <label
-          >Headers · JSON 键值对列表<textarea
-            id="editHeaders"
-            rows="6"
-            spellcheck="false"
-          ></textarea></label
-        ><label
-          >正文格式<select id="editBodyFormat">
-            <option value="base64">Base64 · 保留原始字节与编码</option>
-            <option value="text">UTF-8 文本 · 移除 Content-Encoding</option>
-          </select></label
-        ><label
-          >正文<textarea id="editBody" rows="8" spellcheck="false"></textarea>
-        </label>
+        <label>编辑方式<select id="editViewMode"><option value="raw">原文 · 保留编码与格式</option><option value="table">参数表格 · 可调整顺序</option></select></label>
+        <p id="editTableNotice" role="status" class="muted"></p>
+        <div id="editRawFields">
+          <label>Headers · JSON 键值对列表<textarea id="editHeaders" rows="6" spellcheck="false"></textarea></label>
+          <label>正文格式<select id="editBodyFormat"><option value="base64">Base64 · 保留原始字节与编码</option><option value="text">UTF-8 文本</option></select></label>
+          <label>正文<textarea id="editBody" rows="8" spellcheck="false"></textarea></label>
+        </div>
+        <div id="editTableFields" hidden>
+          <input type="hidden" id="editTablePart" value="headers" />
+          <div class="tabs replay-part-tabs" role="group" aria-label="参数区域">
+            <button type="button" id="editPartHeaders" aria-pressed="true" class="active">Headers</button>
+            <button type="button" id="editPartQuery" aria-pressed="false">Query</button>
+            <button type="button" id="editPartBody" aria-pressed="false">Body / JSON</button>
+          </div>
+          <p class="muted">重复参数逐行保留；↑ ↓ 调整发送顺序。JSON 值使用 JSON 原文。未修改的数据保留原始编码，修改参数后签名可能需要重新计算。</p>
+          <div class="replay-table-wrap"><table class="replay-parameter-table"><thead><tr><th>名称</th><th id="editValueLabel">值</th><th>顺序 / 操作</th></tr></thead><tbody id="editParameterRows"></tbody></table></div>
+          <button type="button" id="editAddRow">添加参数</button>
+        </div>
         <div class="dialog-footer">
           <button type="button" data-close="editDialog">取消</button
           ><button class="primary">发送新请求</button>
@@ -880,25 +915,14 @@
         </button>
       </div>
       <div class="viewer-url-wrap">
-        <div id="viewerUrl" class="viewer-url"></div>
-        <div class="query-preview">
-          <button id="viewerQueryToggle" type="button" hidden>
-            查看 Query JSON
-          </button>
-          <button id="viewerQueryCopy" type="button" hidden>
-            复制 Query JSON
-          </button>
-          <pre id="viewerQueryJson" hidden></pre>
+        <div class="viewer-url-editor">
+          <span id="viewerMethod" class="viewer-method">—</span>
+          <input id="viewerUrl" type="url" aria-label="请求 URL" placeholder="https://域名/路径" autocomplete="off" spellcheck="false" />
         </div>
+
       </div>
       <div class="viewer-toolbar">
-        <div class="tabs" aria-label="查看内容">
-          <button type="button" data-viewer-part="request">发送请求</button>
-          <button type="button" data-viewer-part="original_request">
-            原始请求
-          </button>
-          <button type="button" data-viewer-part="response">响应</button>
-        </div>
+
         <div class="viewer-actions" aria-label="完整请求操作">
           <button
             id="viewerLinks"
@@ -908,8 +932,38 @@
           <button id="viewerReplay" type="button">重放</button>
           <button id="viewerEditReplay" type="button">编辑重放</button>
           <button id="viewerCopyMessage" type="button">复制完整报文</button>
+<details class="detail-export-menu" data-compare-menu="viewer">
+                  <summary>对比</summary><div class="detail-export-options">
+                  <button type="button" data-compare-action="baseline">设为对比基准</button>
+                  <button type="button" data-compare-action="compare" disabled>与基准对比</button>
+                  <button type="button" data-compare-action="source" hidden>与重放来源对比</button>
+                  </div></details>
+<details class="detail-export-menu">
+                  <summary>导出</summary>
+                  <div class="detail-export-options">
+                    <button type="button" id="viewerExportCurl">cURL</button>
+                    <button type="button" id="viewerExportRequests">requests</button>
+                  </div>
+                </details>
         </div>
       </div>
+        <div class="tabs" aria-label="查看内容">
+          <button type="button" data-viewer-part="request">发送请求</button>
+          <button type="button" data-viewer-part="original_request">
+            原始请求
+          </button>
+          <button type="button" data-viewer-part="response">响应</button><button type="button" data-viewer-part="websocket" hidden>WebSocket</button>
+        </div>
+        <div class="query-preview">
+          <button id="viewerQueryToggle" type="button" hidden>
+            查看 Query JSON
+          </button>
+          <button id="viewerQueryCopy" type="button" hidden>
+            复制 Query JSON
+          </button>
+          <pre id="viewerQueryJson" hidden></pre>
+        </div>
+      <div id="viewerWebSocket" class="websocket-messages" hidden></div><div id="viewerHttpMessage">
       <details class="message-headers" open>
         <summary>
           <strong id="viewerHeadersTitle">请求头</strong
@@ -920,27 +974,30 @@
         </div>
         <div id="viewerHeaders" class="message-header-table"></div>
       </details>
-      <div class="message-section-bar">
+      <details id="viewerBodySection" class="message-body-section" open>
+      <summary class="message-section-bar">
         <strong id="viewerBodyTitle">请求体</strong>
         <select id="viewerMode" aria-label="正文显示方式">
-          <option value="raw">原始正文</option>
+          <option value="raw">原始正文</option><option value="events" disabled>SSE 事件</option>
           <option value="decoded" disabled>URL 解码</option>
           <option value="formatted">JSON 格式化</option>
           <option value="tree">JSON 树</option>
         </select>
-        <button id="viewerCopy" type="button">复制正文</button>
+        <button id="viewerCopy" type="button">复制正文</button><a id="viewerDownloadBody" hidden>下载已保存原文</a>
         <button id="viewerCollapse" type="button" hidden>收起节点</button>
-      </div>
+      </summary>
       <div id="viewerNotice" role="status" class="viewer-notice"></div>
-      <pre id="viewerRaw" tabindex="0"></pre>
-      <div id="viewerTree" class="json-tree" hidden></div>
+      <div id="viewerBodyArea" class="vertical-area"><pre id="viewerRaw" tabindex="0"></pre>
+      <div id="viewerTree" class="json-tree" hidden></div><div id="viewerEvents" class="sse-events" hidden></div></div>
+      </details>
+      </div>
     </dialog>
     <dialog id="advancedFilterDialog" class="advanced-filter-dialog" aria-labelledby="advancedFilterTitle">
       <div class="dialog-heading">
         <h2 id="advancedFilterTitle">高级筛选</h2>
         <button id="closeAdvancedFilters" type="button" aria-label="关闭高级筛选">×</button>
       </div>
-      <p class="muted">每组选择“全部满足”或“任一满足”；子组就是括号。最多 4 层、30 个条件。响应正文暂不参与此处筛选。</p>
+      <p class="muted">每组选择“全部满足”或“任一满足”；子组就是括号。最多 4 层、30 个条件。支持请求正文及响应正文筛选。</p>
       <div id="advancedGroups" class="advanced-groups"></div>
       <div class="advanced-preview">
         <strong>实际逻辑</strong><code id="advancedLogic"></code>
@@ -952,11 +1009,31 @@
         <button id="applyAdvancedFilters" type="button" class="primary">应用筛选</button>
       </div>
     </dialog>
+    <dialog id="curlCopyDialog" aria-labelledby="curlCopyTitle" class="curl-copy-dialog">
+      <div class="dialog-heading"><h2 id="curlCopyTitle">cURL 命令</h2><button type="button" id="closeCurlCopy" aria-label="关闭代码框">×</button></div>
+      <p class="muted">选中代码后按 ⌘C / Ctrl+C 复制。</p>
+      <textarea id="curlCopyText" readonly spellcheck="false" aria-label="可复制的请求代码"></textarea>
+      <div class="dialog-footer"><button type="button" id="selectCurlText">全选代码</button><button type="button" id="doneCurlCopy">关闭</button></div>
+    </dialog>
+<dialog id="comparisonDialog" class="comparison-dialog" aria-labelledby="comparisonTitle">
+      <div class="dialog-heading"><h2 id="comparisonTitle">请求差异对比</h2><button type="button" data-compare-close aria-label="关闭请求对比">×</button></div>
+      <div class="comparison-toolbar"><button type="button" data-compare-swap disabled>交换 A / B</button><button type="button" data-compare-clear>清除基准</button></div>
+      <pre data-compare-labels class="comparison-labels"></pre>
+      <p data-compare-status class="muted" role="status"></p>
+      <div data-compare-tabs class="tabs comparison-tabs" role="group" aria-label="差异分区"></div>
+      <div data-compare-results class="comparison-results"></div>
+    </dialog>
     <div id="toast" role="status"></div>
-    <script src="/request-viewer.js?v=20261004-review1"></script>
+    <script src="/read-requests.js?v=20261008-live-delete"></script>
+    <script src="/body-events.js?v=20261008-live-delete"></script>
+    <script src="/websocket-viewer.js?v=20261008-live-delete"></script>
+    <script src="/request-viewer.js?v=20261008-live-delete"></script>
     <script src="/sidebar.js"></script>
-    <script src="/app.js?v=20261004-requests"></script>
+    <script src="/connection-info.js?v=20261008-transport"></script>
+    <script src="/replay-editor.js?v=20261008-compact"></script>
+    <script src="/request-comparison.js?v=20261008-live-delete"></script>
+    <script src="/app.js?v=20261008-live-delete"></script>
     <script src="/detail-resizer.js?v=20261001-fine-resize"></script>
-    <script src="/table-resizer.js?v=20261004-review1"></script>
+    <script src="/table-resizer.js?v=20261008-interface-path"></script>
   </body>
 </html>

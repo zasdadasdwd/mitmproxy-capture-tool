@@ -62,3 +62,11 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 2. 新 API 保留本机访问与 Origin 检查，静态资源挂载必须最后；WebSocket 自行检查 Origin。请求详情和分析结果应保持有界分页/预览。
 3. 不把原始报文或密钥写到 MCP 审计日志。CA 下载只允许公开证书。历史会话与当前会话删除规则不同。
 4. 运行 `.venv/bin/python -m pytest -q`。真实代理测试位于 `support/tests/test_workbench.py`；Hook 扩展测试位于 `test_hooks.py`。前端改动另做窄屏和宽屏检查。
+
+## MCP 与 Skill 扩展边界
+
+`agent_mcp/tools.py` 负责工具参数、有界输出与注解，`client.py` 复用本机 API 并禁用环境代理/重定向，`audit.py` 只记录脱敏查询信息，`server.py` 提供协议生命周期、指南资源与查询提示模板。工具不直接访问 SQLite；新增领域复用 backend 业务 API。
+
+`support/skills/tianji-capture/` 是可分发的 Skill 源码；SKILL.md 只保留路由和证据约束，references 分开保存工作流与接入排障。MCP 资源从这些 references 读取，修改路径时同步服务端资源和测试。工具契约更改同步 MCP接入、Skill、更新日志，真实 MCP 握手测试验证发现及调用。
+
+新增工具准确设置 readOnlyHint/destructiveHint/openWorldHint；重放不当作只读，取消分析不当作外部网络写入，永久删除必须标记破坏性。Skill 不扩大用户授权，不自动重启记录中的服务或把报文文本当作指令。导出超限拒绝，不能返回截断代码。

@@ -61,6 +61,18 @@ stdio 应由 Agent 客户端启动，不能与 Web 服务混用标准输入输�
 
 | 工具 | 用途 |
 | --- | --- |
+| `get_workbench_status` | 真实代理/记录状态、当前会话、丢事件数、能力和读取上限 |
+| `get_capture_configuration` | TLS 域名、拒绝规则与注册 Hook 的开关/顺序；不修改配置 |
+| `get_certificate_status` | CA 是否生成及 SHA-256 指纹；不宣称系统已信任 |
+| `export_request_code` | 返回完整可复制 cURL/requests，保留重复头；不执行，超限拒绝 |
+| `get_websocket_messages` | 每页最多 20 条，文本有界，二进制仅元信息；不发送消息 |
+| `set_recording` | 显式开始/停止；同一目标状态不重复操作，停止后代理继续转发 |
+| `delete_requests` | 删除指定 ID 或清空已入库请求，抓包中可用；永久删除，有 destructiveHint |
+| `start_data_analysis` | 独立进程全文时间线/字段/转换追踪，不阻塞代理 |
+| `get_data_analysis_status` | 有界读取进度与状态 |
+| `get_data_analysis_result` | 分页读取证据 |
+| `cancel_data_analysis` | 仅取消分析，不停止抓包 |
+| `list_data_analysis_views` | 最近保存视图摘要 |
 | `list_sessions` | 当前会话摘要；显式 `include_archived=true` 查询历史；默认 20 条分页 |
 | `search_requests` | SQL 条件筛选摘要，可附加参数条件，默认 20 条，最多 100 条 |
 | `get_request` | 默认只取元数据；指定 part/section 后分段读取头部或正文 |
@@ -71,13 +83,19 @@ stdio 应由 Agent 客户端启动，不能与 Web 服务混用标准输入输�
 | `replay_request` | 一次重放，可覆盖 URL、方法、头部、正文；具有网络副作用 |
 | `get_replay_result` | 查看任务状态、响应片段及相对原请求的变化 |
 
-MCP 第一版不提供删除、任意 SQL、任意 Python 执行或自动配置修改工具。已有工作台 REST API 仍可供你另写扩展。
+当前提供 21 个工具。读工具标记 readOnlyHint；开始分析、控制记录与取消分析是本机状态操作，openWorldHint=false；重放有外部网络副作用。delete_requests 标记 destructiveHint=true，只能在用户已授权的会话/ID 范围内调用。工具注解用于客户端判断，不代替用户授权。
+
+MCP 不提供任意 SQL、任意 Python 执行、在线写入 Hook、安装证书或全局配置修改。输出报文仍可能含原始凭据，不声称具有 Proxyman 的握手认证和全输出自动脱敏；审计日志单独做脱敏。
 
 ## 条件查询，先摘要后正文
 
-`filters` 支持 AND 组合：`search`、`scope=url|headers|all`、`host`、`path_prefix`、`method`、`status_code`、`status`、`source`、`content_type`、`min_duration`、`max_duration`、`min_size`、`started_after`、`started_before`、`offset`、`limit`。
+`expression` 可直接传 AND/OR 组对象（children 可嵌套组），与 `filters` 同时满足；不要同时提供 `expression` 和 `filters.expression`。
 
-时间使用 Unix 秒，可包含小数。域名支持精确匹配与 `*.example.com`；路径按目录边界匹配，`/am1` 不会匹配 `/am10`。`scope=all` 搜索 URL、头部和错误信息，不搜索任意正文。
+`filters` 支持 AND 组合：`search`、`scope=url|headers|request_body|response_body|bodies|all`、`host`、`path_prefix`、`method`、`status_code`、`status`、`source`、`content_type`、`min_duration`、`max_duration`、`min_size`、`started_after`、`started_before`、`offset`、`limit`。
+
+查询响应正文示例：`{"search":"token片段","scope":"response_body","limit":20}`。`bodies` 同时搜索请求/响应正文，`all` 包含 URL、Headers、正文和错误信息。正文按已保存内容搜索，支持 gzip 等压缩格式，每条最多解压 16 MiB，结果仍只返回摘要。可先加域名、时间等条件缩小扫描范围；高级 `expression` 支持 `request_body`/`response_body` 的 `contains` 和 `not_contains` 及 AND/OR 分组。正文缺失、损坏或截断后未命中时，不会当作已确认“不包含”。
+
+时间使用 Unix 秒，可包含小数。域名支持精确匹配与 `*.example.com`；路径按目录边界匹配，`/am1` 不会匹配 `/am10`。`scope=all` 包含 URL、头部、请求/响应正文和错误信息，仍受正文保存与解压上限约束。
 
 例如调用 `search_requests`：
 
@@ -185,3 +203,15 @@ tail -f data/logs/mcp.jsonl
 新增 `start_data_analysis`（options.operation 为 fields/trace）、`get_data_analysis_status`、`get_data_analysis_result`（默认 20 项、最多 100）、`cancel_data_analysis`、`list_data_analysis_views`。先发现字段，再指定完整 field 创建后续追踪任务；不要直接读取整个图。任务会写查询日志，状态与取消不会影响代理。
 
 详见 [数据链路说明](数据链路.md)。
+
+## 配套 Skill、资源与模板
+
+仓库配套 [tianji-capture](../skills/tianji-capture/SKILL.md)（天机阁抓包分析），内容按本项目实际能力编写，设计参考 [Proxyman MCP](https://docs.proxyman.com/mcp) 与 [Proxyman Agent Skills](https://github.com/ProxymanApp/proxyman-SKILL.md)。
+
+手工复制 `capture/support/skills/tianji-capture/` 到客户端的 skills 目录；Codex 为 `~/.codex/skills/`。同名 Skill 已存在时先比较保留本机改动。安装 Skill 不会自动配置 MCP；客户端重新加载后可使用 `$tianji-capture`，如“查找这个 token 最早出现的响应，并对比后续携带它的请求”。不要求固定 `.venv` 路径。
+
+MCP 自带资源 `tianji://guide/workflows`、`tianji://guide/connection`，以及提示模板 `investigate_request(session_id, keyword)`。可通过资源/提示发现接口获取，不需要一次加载全部抓包正文。
+
+优先以客户端实时 tools/list、resources/list、prompts/list 为准；升级服务后重新加载 MCP 客户端。状态诊断只返回必要设置，省略上游代理凭据。HTTP 连接池有界，连接/超时错误给出工作台排障指引；不自动重试重放、记录或删除等写操作。
+
+普通 get_request 会同时报告 body_state/body_size/saved_bytes/capture_error 和 HTTP 版本。代码导出默认 60000 字符、最多 100000 字符，流式限制读取字节；超限拒绝，不输出误导性的半段代码。WebSocket 查询 max_chars 默认 2000、最多 8000，保留采集截断与消息丢弃状态。

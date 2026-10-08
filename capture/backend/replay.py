@@ -75,14 +75,26 @@ async def replay_batch(
     """顺序执行可取消的重放任务，保留来源 ID 和新的请求响应记录。"""
     # 第一版批量顺序发送，避免一次选择就突发大量并发请求。
     try:
-        async with httpx.AsyncClient(
-            timeout=30,
-            follow_redirects=False,
-            trust_env=False,
-            proxy=settings.get("upstream_proxy")
-            if settings.get("connection_mode") == "upstream"
-            else None,
-        ) as client:
+        async with (
+            httpx.AsyncClient(
+                timeout=30,
+                follow_redirects=False,
+                trust_env=False,
+                http2=True,  # HTTP/2 请求允许 ALPN 协商及服务器回退。
+                proxy=settings.get("upstream_proxy")
+                if settings.get("connection_mode") == "upstream"
+                else None,
+            ) as h2_client,
+            httpx.AsyncClient(
+                timeout=30,
+                follow_redirects=False,
+                trust_env=False,
+                http2=False,
+                proxy=settings.get("upstream_proxy")
+                if settings.get("connection_mode") == "upstream"
+                else None,
+            ) as h1_client,
+        ):
             for _ in range(options.count):
                 for original_id, request in requests:
                     flow = {
@@ -106,9 +118,46 @@ async def replay_batch(
                                 status="blocked", reason="重放目标命中域名拒绝列表"
                             )
                         else:
+                            original_version = request.get("http_version")
+                            # 两个连接池隔离 ALPN，HTTP/1 请求不会复用已协商的 HTTP/2 连接。
+                            enable_h2 = original_version not in ("HTTP/1.0", "HTTP/1.1")
+                            client = h2_client if enable_h2 else h1_client
                             prepared = prepare_request(request)
-                            response = await client.send(
-                                client.build_request(**prepared), stream=True
+                            outbound = client.build_request(**prepared)
+                            # 保存实际发送的头部和协议，避免详情仍显示旧 Host/长度/HTTP2。
+                            flow["original_request"] = dict(request)
+                            flow["request"] = {
+                                **request,
+                                "url": str(outbound.url),
+                                "headers": list(outbound.headers.multi_items()),
+                                "http_version": None,  # 协商成功后填入实际发送版本。
+                            }
+                            flow["replay_transport"] = {
+                                "client": "httpx",
+                                "original_http_version": original_version,
+                                "http_version_changed": None,
+                                "http2_enabled": enable_h2,
+                                "tls_fingerprint_preserved": False,
+                            }
+                            response = await client.send(outbound, stream=True)
+                            # HTTP/1.0 响应并不代表发送了 HTTP/1.0 请求；httpx 使用 HTTP/1.1。
+                            actual_version = (
+                                "HTTP/2.0"
+                                if response.http_version in ("HTTP/2", "HTTP/2.0")
+                                else "HTTP/1.1"
+                            )
+                            normalized_original = (
+                                "HTTP/2.0"
+                                if original_version == "HTTP/2"
+                                else original_version
+                            )
+                            flow["request"]["http_version"] = actual_version
+                            flow["replay_transport"].update(
+                                actual_http_version=actual_version,
+                                http_version_changed=normalized_original
+                                != actual_version
+                                if original_version
+                                else None,
                             )
                             try:
                                 body = bytearray()

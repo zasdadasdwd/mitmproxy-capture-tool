@@ -256,7 +256,7 @@ def test_mcp_tools_and_developer_audit(evidence, tmp_path):
         )
         async with server.resources():
             tools = await server.list_tools()
-            assert len(tools) == 14
+            assert len(tools) == 21
             search = next(item for item in tools if item.name == "search_requests")
             assert search.annotations.readOnlyHint
             replay = next(item for item in tools if item.name == "replay_request")
@@ -538,3 +538,190 @@ def test_mcp_edit_replay_and_result(evidence, tmp_path):
         origin.shutdown()
         origin.server_close()
         thread.join()
+
+
+def test_mcp_structured_groups_export_websocket_and_delete(evidence, tmp_path):
+    """真实工作台 API 验证 AND/OR、重复头导出、消息分页及迟到事件拦截。"""
+    store, source_session = evidence
+    app_module.app.state.workbench.config_lock = asyncio.Lock()
+    store.save_flow(source_session, {"id": "ws", "websocket": {"state": "open"}})
+    for number in range(1, 4):
+        store.save_websocket(
+            source_session,
+            {
+                "flow_id": "ws",
+                "summary": {"state": "open", "total": number},
+                "message": {
+                    "number": number,
+                    "type": "text" if number < 3 else "binary",
+                    "body_b64": base64.b64encode(b"abcdef").decode(),
+                    "size": 6,
+                },
+            },
+        )
+
+    async def run():
+        server = create_server(
+            "http://127.0.0.1:8765",
+            log_path=tmp_path / "extra.jsonl",
+            transport=httpx.ASGITransport(app=app_module.app),
+        )
+        async with server.resources():
+
+            async def call(name, **kwargs):
+                return structured(await server.call_tool(name, kwargs))
+
+            result = await call(
+                "search_requests",
+                session_id=source_session,
+                expression={
+                    "operator": "and",
+                    "children": [
+                        {"field": "method", "operator": "eq", "value": "POST"},
+                        {
+                            "operator": "or",
+                            "children": [
+                                {
+                                    "field": "url",
+                                    "operator": "contains",
+                                    "value": "page=1",
+                                },
+                                {
+                                    "field": "status_code",
+                                    "operator": "eq",
+                                    "value": "4xx",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            )
+            assert [item["id"] for item in result["items"]] == ["business"]
+            code = await call(
+                "export_request_code", session_id=source_session, flow_id="business"
+            )
+            assert "-H 'X-Test: a'" in code["code"] and "-H 'X-Test: b'" in code["code"]
+            assert not code["executed"]
+            with pytest.raises(ToolError):
+                await call(
+                    "export_request_code",
+                    session_id=source_session,
+                    flow_id="business",
+                    max_chars=10,
+                )
+            result = await call(
+                "get_websocket_messages",
+                session_id=source_session,
+                flow_id="ws",
+                page_size=2,
+                max_chars=3,
+            )
+            assert result["has_more"] and result["items"][0]["text"] == "abc"
+            assert (
+                result["items"][0]["text_limited"]
+                and "body_b64" not in result["items"][0]
+            )
+            result = await call(
+                "get_websocket_messages",
+                session_id=source_session,
+                flow_id="ws",
+                page=2,
+                page_size=2,
+            )
+            assert "text" not in result["items"][0] and not result["has_more"]
+            tools = {tool.name: tool for tool in await server.list_tools()}
+            assert tools["delete_requests"].annotations.destructiveHint
+            assert not tools["set_recording"].annotations.openWorldHint
+            assert not tools["start_data_analysis"].annotations.readOnlyHint
+            result = await call(
+                "delete_requests", session_id=source_session, ids=["ws"]
+            )
+            assert result["deleted"] == 1
+            store.save_flow(source_session, {"id": "ws", "status": "complete"})
+            with pytest.raises(FileNotFoundError):
+                store.get_flow(source_session, "ws")
+            with pytest.raises(ToolError):
+                await call(
+                    "delete_requests",
+                    session_id=source_session,
+                    ids=["business"],
+                    all=True,
+                )
+            resources = await server.list_resources()
+            assert {str(item.uri) for item in resources} == {
+                "tianji://guide/workflows",
+                "tianji://guide/connection",
+            }
+            assert "search_requests" in str(
+                await server.read_resource("tianji://guide/workflows")
+            )
+            assert any(
+                prompt.name == "investigate_request"
+                for prompt in await server.list_prompts()
+            )
+
+    asyncio.run(run())
+    assert "secret-token" not in (tmp_path / "extra.jsonl").read_text()
+
+
+def test_mcp_status_controls_and_connection_errors(tmp_path):
+    """状态不泄露上游凭据；重复开始不会发第二个写请求，断线给出可操作错误。"""
+    recording = False
+    writes = []
+
+    def handler(request):
+        nonlocal recording
+        if request.url.path == "/api/status":
+            return httpx.Response(
+                200,
+                json={
+                    "running": True,
+                    "recording": recording,
+                    "session_id": "test" if recording else None,
+                    "settings": {
+                        "upstream_proxy": "http://user:private@localhost:7890",
+                        "tls_domains": ["example.test"],
+                        "request_hooks": [{"name": "template"}],
+                    },
+                },
+            )
+        writes.append(request.url.path)
+        recording = request.url.path.endswith("start")
+        return httpx.Response(200, json={"recording": recording})
+
+    async def run():
+        server = create_server(
+            "http://127.0.0.1:8765",
+            log_path=tmp_path / "status.jsonl",
+            transport=httpx.MockTransport(handler),
+        )
+        async with server.resources():
+
+            async def call(name, **kwargs):
+                return structured(await server.call_tool(name, kwargs))
+
+            result = await call("get_workbench_status")
+            assert (
+                "private" not in json.dumps(result)
+                and result["capabilities"]["live_delete"]
+            )
+            config = await call("get_capture_configuration")
+            assert config["tls_domains"] == ["example.test"]
+            assert (await call("set_recording", enabled=True))["changed"]
+            assert not (await call("set_recording", enabled=True))["changed"]
+            assert (await call("set_recording", enabled=False))["changed"]
+            assert writes == ["/api/engine/start", "/api/engine/stop"]
+
+        def offline(request):
+            raise httpx.ConnectError("private-value", request=request)
+
+        server = create_server(
+            "http://127.0.0.1:8765",
+            log_path=tmp_path / "offline.jsonl",
+            transport=httpx.MockTransport(offline),
+        )
+        async with server.resources():
+            with pytest.raises(ToolError, match="无法连接天机阁"):
+                await server.call_tool("get_workbench_status", {})
+
+    asyncio.run(run())

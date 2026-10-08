@@ -1,15 +1,16 @@
 """抓包会话、请求列表和历史归档接口。"""
 
 import asyncio
+import json
 import sqlite3
 import tempfile
 import zipfile
 from contextlib import closing
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
@@ -58,16 +59,16 @@ def require_session_idle(state, session_id):
 
 @router.post("/api/sessions/{session_id}/flows/delete")
 async def delete_flows(session_id: str, options: DeleteFlowOptions, request: Request):
-    """删除选中请求或清空整个会话，正文文件一起清理。"""
+    """记录中也允许删除请求；存储层标记 ID，拒绝迟到事件重新入库。"""
     if options.all == bool(options.ids):
         raise HTTPException(400, "请选择删除指定 ID 或明确清空全部")
     state = workbench(request)
     async with state.config_lock:
-        require_session_idle(state, session_id)
         count = await asyncio.to_thread(
             state.store.delete_flows, session_id, None if options.all else options.ids
         )
         state.notify({"type": "sessions"})
+        state.notify({"type": "flows", "session_id": session_id})
         return {"deleted": count}
 
 
@@ -191,4 +192,62 @@ def flow_detail(
     """完整查看使用 text_only 减少重复编码；默认保留原始字节供编辑和重放。"""
     return workbench(request).store.get_flow(
         session_id, flow_id, preview=preview, include_raw=not text_only
+    )
+
+
+@router.get("/api/sessions/{session_id}/flows/{flow_id}/body/{part}")
+def download_body(
+    session_id: str,
+    flow_id: str,
+    part: Literal["request", "response", "original_request"],
+    request: Request,
+):
+    """流式下载已保存原始正文，不把大文件装入接口响应内存。"""
+    store = workbench(request).store
+    with store.lock, store.connect(session_id) as db:
+        row = db.execute("SELECT detail FROM flows WHERE id=?", (flow_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "请求不存在")
+        message = json.loads(row[0]).get(part) or {}
+        filename = message.get("body_file")
+        if not filename or Path(filename).name != filename:
+            raise HTTPException(404, "没有已保存的正文文件")
+        path = store.root / session_id / "bodies" / filename
+        if not path.is_file():
+            raise HTTPException(404, "正文文件不存在")
+    # 固定读取当前文件长度，SSE 继续追加时不能超过本次 Content-Length。
+    size = path.stat().st_size
+
+    def chunks():
+        with path.open("rb") as source:
+            remaining = size
+            while remaining:
+                chunk = source.read(min(65536, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    return StreamingResponse(
+        chunks(),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Length": str(size),
+            "Content-Disposition": f'attachment; filename="{part}-body.bin"',
+            "X-Capture-Body-State": message.get("body_state", "unknown"),
+        },
+    )
+
+
+@router.get("/api/sessions/{session_id}/flows/{flow_id}/websocket")
+def websocket_messages(
+    session_id: str,
+    flow_id: str,
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=100),
+):
+    """WebSocket 重组消息分页，旧 HTTP 记录返回空列表。"""
+    return workbench(request).store.websocket_messages(
+        session_id, flow_id, page, page_size
     )

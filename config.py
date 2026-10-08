@@ -111,7 +111,13 @@ DEFAULT_SETTINGS = {
     "blocked_domains": [],  # 需要拒绝的域名或通配规则。
     "hook_enabled": False,  # Hook 总开关；具体 Hook 可在界面排序和启用。
     "request_hooks": [{"name": "request_hook", "enabled": True}],
-    "body_limit": 2 * 1024 * 1024,  # 单个正文最多保存 2 MiB。
+    "websocket_message_limit": 1000,  # 每连接最多保存的重组消息数量。
+    "websocket_body_limit": 4
+    * 1024
+    * 1024,  # 每连接消息正文保存上限，单条最多 64 KiB。
+    "body_limit": 2 * 1024 * 1024,  # 常规正文内存缓存上限 2 MiB。
+    "save_streamed_bodies": True,  # 大正文及 SSE 异步落盘，不阻塞转发。
+    "stream_body_limit": 64 * 1024 * 1024,  # 单个流式正文最多保存 64 MiB。
 }
 
 
@@ -142,6 +148,16 @@ class Settings(BaseModel):
     )
     body_limit: int = Field(
         default=DEFAULT_SETTINGS["body_limit"], ge=1024, le=16 * 1024 * 1024
+    )
+    save_streamed_bodies: bool = DEFAULT_SETTINGS["save_streamed_bodies"]
+    stream_body_limit: int = Field(
+        default=DEFAULT_SETTINGS["stream_body_limit"], ge=1024, le=512 * 1024 * 1024
+    )
+    websocket_message_limit: int = Field(
+        default=DEFAULT_SETTINGS["websocket_message_limit"], ge=1, le=10000
+    )
+    websocket_body_limit: int = Field(
+        default=DEFAULT_SETTINGS["websocket_body_limit"], ge=1024, le=64 * 1024 * 1024
     )
     version: int = 1
 

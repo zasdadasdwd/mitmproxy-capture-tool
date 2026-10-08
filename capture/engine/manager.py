@@ -82,6 +82,8 @@ class EngineManager:
             CAPTURE_TOKEN=self.token,
             CAPTURE_SESSION="",
             CAPTURE_CONTROL=str(self.control_path),
+            CAPTURE_PARENT_PID=str(os.getpid()),
+            CAPTURE_BODY_ROOT=str(getattr(self.store, "root", DATA / "captures")),
             CAPTURE_HOOK_MODULES=json.dumps(self.hook_modules),
         )
         self.log_file = (Path(self.socket_folder.name) / "engine.log").open("wb")
@@ -156,7 +158,26 @@ class EngineManager:
                         await asyncio.to_thread(
                             self.store.save_flow, session_id, event["flow"]
                         )
-                        self.notify({"type": "flows", "session_id": session_id})
+                        self.notify(
+                            {
+                                "type": "flows",
+                                "session_id": session_id,
+                                "flow_id": event["flow"]["id"],
+                            }
+                        )
+                elif event["type"] == "websocket":
+                    session_id = event.get("session_id")
+                    if session_id and session_id == self.session_id:
+                        await asyncio.to_thread(
+                            self.store.save_websocket, session_id, event
+                        )
+                        self.notify(
+                            {
+                                "type": "flows",
+                                "session_id": session_id,
+                                "flow_id": event["flow_id"],
+                            }
+                        )
                 elif event["type"] == "capture":
                     if (
                         event.get("sequence") == self.control_sequence

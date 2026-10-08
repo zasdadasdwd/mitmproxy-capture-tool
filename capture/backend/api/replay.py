@@ -29,7 +29,14 @@ async def replay(session_id: str, options: ReplayOptions, request: Request):
     try:
         for flow_id in options.ids:
             flow = await asyncio.to_thread(state.store.get_flow, session_id, flow_id)
+            if flow.get("websocket"):
+                raise ValueError("WebSocket 握手和消息暂不支持 HTTP 重放")
             message = options.edit.model_dump() if options.edit else flow.get("request")
+            if options.edit:
+                # 编辑的是业务参数，协议仍沿用来源请求，不能因编辑丢失 HTTP/2。
+                message["http_version"] = (flow.get("request") or {}).get(
+                    "http_version"
+                )
             if not message:
                 raise ValueError("透传或连接记录无法重放")
             prepare_request(message)
@@ -76,11 +83,19 @@ class ExportOptions(BaseModel):
 
     ids: list[str] = Field(min_length=1, max_length=1000)
     format: Literal["curl", "python", "requests", "har", "csv", "json"]
+    request_url: str | None = Field(default=None, max_length=16000)
 
 
 @router.post("/api/sessions/{session_id}/export")
 def export(session_id: str, options: ExportOptions, request: Request):
     """导出选中流量为 cURL、Python/httpx、Python/requests、HAR、CSV 或 JSON。"""
+    if options.request_url is not None:
+        if len(options.ids) != 1 or options.format not in ("curl", "requests"):
+            raise HTTPException(400, "修改 URL 仅支持单条 cURL 或 requests 代码")
+        try:
+            prepare_request({"url": options.request_url, "method": "GET"})
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     extension = {"curl": "sh", "python": "py", "requests": "py"}.get(
         options.format, options.format
     )
@@ -90,7 +105,12 @@ def export(session_id: str, options: ExportOptions, request: Request):
         path = Path(temporary.name)
     try:
         write_export(
-            workbench(request).store, session_id, options.ids, options.format, path
+            workbench(request).store,
+            session_id,
+            options.ids,
+            options.format,
+            path,
+            request_url=options.request_url,
         )
     except ValueError as exc:
         path.unlink(missing_ok=True)
@@ -103,5 +123,8 @@ def export(session_id: str, options: ExportOptions, request: Request):
         path,
         filename=f"capture.{extension}",
         media_type="application/octet-stream",
+        headers={"X-Capture-URL-Override": "applied"}
+        if options.request_url is not None
+        else None,
         background=BackgroundTask(path.unlink, missing_ok=True),
     )

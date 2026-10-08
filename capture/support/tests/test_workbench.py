@@ -736,7 +736,7 @@ def test_change_proxy_port_while_only_forwarding(client, origin):
 
 
 def test_delete_requests_and_finished_batches(client, origin):
-    """删除会清理正文；活动会话拒绝删除，批量删除先校验全部批次。"""
+    """删除会清理正文；活动会话允许清空记录，整批删除仍校验活动状态。"""
     api, data = client
     session = api.post("/api/engine/start").json()["session_id"]
     port = api.get("/api/status").json()["settings"]["listen_port"]
@@ -753,9 +753,9 @@ def test_delete_requests_and_finished_batches(client, origin):
     flow_id = rows[0]["id"]
     assert (
         api.post(
-            f"/api/sessions/{session}/flows/delete", json={"all": True}
+            f"/api/sessions/{session}/flows/delete", json={"ids": ["not-yet-saved"]}
         ).status_code
-        == 409
+        == 200
     )
     assert api.post("/api/sessions/delete", json={"ids": [session]}).status_code == 409
     api.post("/api/engine/stop")
@@ -770,7 +770,7 @@ def test_delete_requests_and_finished_batches(client, origin):
     assert (data / "captures" / session).exists()
     assert (
         api.post(f"/api/sessions/{replay}/flows/delete", json={"all": True}).status_code
-        == 409
+        == 200
     )
     api.post(f"/api/replay/{replay}/cancel")
     removed = api.post(f"/api/sessions/{session}/flows/delete", json={"ids": [flow_id]})
@@ -812,3 +812,24 @@ def test_delete_requests_and_finished_batches(client, origin):
         and not (data / "captures" / replay).exists()
     )
     assert api.get("/api/status").json()["running"]
+
+
+def test_clear_live_capture_keeps_proxy_and_accepts_new_requests(client, origin):
+    """清空正在记录的请求不停止代理，后续请求仍进入同一会话。"""
+    api, _ = client
+    session = api.post("/api/engine/start").json()["session_id"]
+    port = api.get("/api/status").json()["settings"]["listen_port"]
+    with httpx.Client(proxy=f"http://127.0.0.1:{port}", trust_env=False) as proxy:
+        assert proxy.get(origin["http"] + "/before-clear").status_code == 200
+        wait_for(api, lambda: api.get(f"/api/sessions/{session}/flows").json()["total"])
+        result = api.post(f"/api/sessions/{session}/flows/delete", json={"all": True})
+        assert result.status_code == 200, result.text
+        assert result.json()["deleted"] >= 1
+        assert api.get(f"/api/sessions/{session}/flows").json()["total"] == 0
+        assert api.get("/api/status").json()["session_id"] == session
+        assert proxy.get(origin["http"] + "/after-clear").status_code == 200
+        rows = wait_for(
+            api, lambda: api.get(f"/api/sessions/{session}/flows").json()["items"]
+        )
+        assert all("/before-clear" not in row["url"] for row in rows)
+        assert any("/after-clear" in row["url"] for row in rows)

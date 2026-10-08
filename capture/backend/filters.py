@@ -13,7 +13,9 @@ class FlowFilters(BaseModel):
     """列表和批量选择共用筛选；高级条件树与快捷条件做 AND。"""
 
     search: str = Field(default="", max_length=500)
-    scope: Literal["url", "headers", "all"] = "url"
+    scope: Literal[
+        "url", "headers", "request_body", "response_body", "bodies", "all"
+    ] = "url"
     host: str = ""
     path_prefix: str = Field(default="", max_length=2000)
     method: str = ""
@@ -36,8 +38,30 @@ class FlowFilters(BaseModel):
     started_after: float | None = Field(default=None, ge=0)
     started_before: float | None = Field(default=None, ge=0)
     expression: str = Field(default="", max_length=12000)
+    # 排序字段采用白名单；与分页共用，避免仅排序当前页。
+    sort_by: Literal["started", "size"] = "started"
+    sort_order: Literal["none", "asc", "desc"] = "none"
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=200, ge=1, le=500)
+
+    def needs_body_search(self):
+        """只有显式选择正文范围或正文分组条件时才读取文件。"""
+        if self.search and self.scope in {
+            "request_body",
+            "response_body",
+            "bodies",
+            "all",
+        }:
+            return True
+        if not self.expression:
+            return False
+
+        def visit(node):
+            if hasattr(node, "children"):
+                return any(visit(child) for child in node.children)
+            return node.field in {"request_body", "response_body"}
+
+        return visit(parse_expression(self.expression))
 
     @field_validator("host")
     @classmethod
@@ -103,6 +127,12 @@ def build_conditions(filters: FlowFilters) -> tuple[str, list]:
         if filters.scope in ("headers", "all"):
             keyword_parts.append(header_search)
             parameters.extend([filters.search] * 2)
+        for section in ("request", "response"):
+            if filters.scope in (f"{section}_body", "bodies", "all"):
+                keyword_parts.append(
+                    f"body_contains(json_extract(flows.detail, '$.{section}'), ?)"
+                )
+                parameters.append(filters.search)
         if filters.scope == "all":
             keyword_parts.append(
                 "instr(lower(coalesce(json_extract(detail, '$.reason'), '')), lower(?)) > 0"

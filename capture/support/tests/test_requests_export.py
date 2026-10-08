@@ -66,7 +66,8 @@ def test_single_requests_script_preserves_bytes_and_template(monkeypatch, body):
     assert '"headers": {\n' in script
     params = namespace["build_request_params"]()
     assert params["data"] == body
-    assert params["url"] == example_flow()["request"]["url"]
+    assert params["url"] == "https://example.test/api"
+    assert params["params"] == [("tag", "a"), ("tag", "b"), ("signature", "x+y=")]
     assert params["headers"]["X-Quoted"] == "it's a test"
     assert "Content-Length" not in params["headers"]
     assert params["timeout"] == 30
@@ -74,7 +75,10 @@ def test_single_requests_script_preserves_bytes_and_template(monkeypatch, body):
     if body != b"\xff\xfe\x00binary":
         assert ".encode()" in script
     namespace["send_request"]()
-    assert module.request.call_args.kwargs == params
+    sent = module.request.call_args.kwargs
+    assert sent["url"] == example_flow()["request"]["url"]
+    assert sent["data"] == params["data"]
+    assert sent["headers"] == params["headers"]
 
 
 def test_batch_is_sequential_and_params_can_be_edited_independently(monkeypatch):
@@ -100,9 +104,12 @@ def test_batch_is_sequential_and_params_can_be_edited_independently(monkeypatch)
     ],
 )
 def test_repeated_headers_cannot_be_silently_lost(headers):
-    """requests 使用字典，重复字段应明确提示另一种导出格式。"""
-    with pytest.raises(ValueError, match="重复请求头"):
-        list(requests_lines([example_flow(headers=headers)]))
+    """导出保留重复请求头，不能合并成字典。"""
+    namespace = {"__name__": "test_export"}
+    script = "\n".join(requests_lines([example_flow(headers=headers)]))
+    # 此测试只构建参数，不调用发送。
+    exec(script, namespace)  # noqa: S102 - 仅执行合成请求的导出代码。
+    assert namespace["build_request_params"]()["headers"] == headers
 
 
 def test_truncated_or_missing_http_request_is_rejected(tmp_path):
@@ -140,5 +147,111 @@ def test_requests_download_endpoint_and_batch_writer(tmp_path, monkeypatch):
         result = client.post(
             "/api/sessions/session/export", json={"ids": ["one"], "format": "requests"}
         )
+        assert result.status_code == 200
+        assert "HTTPHeaderDict" in result.text
+        original_url = flows["one"]["request"]["url"]
+        result = client.post(
+            "/api/sessions/session/export",
+            json={
+                "ids": ["one"],
+                "format": "curl",
+                "request_url": "https://new.example/changed?x=1",
+            },
+        )
+        assert result.status_code == 200
+        assert result.headers["X-Capture-URL-Override"] == "applied"
+        assert "https://new.example/changed?x=1" in result.text
+        assert flows["one"]["request"]["url"] == original_url
+
+
+def test_duplicate_headers_sent_as_separate_lines():
+    """通过本机 HTTP 服务验证真实 requests/urllib3 不会合并重复头。"""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    received = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            received["headers"] = self.headers.get_all("X-Test")
+            received["path"] = self.path
+            received["body"] = self.rfile.read(
+                int(self.headers.get("Content-Length", 0))
+            )
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        flow = example_flow(b"payload", [("X-Test", "one"), ("x-test", "two")])
+        flow["request"]["url"] = (
+            f"http://127.0.0.1:{server.server_port}/api?tag=a&tag=b"
+        )
+        namespace = {"__name__": "test_export"}
+        exec("\n".join(requests_lines([flow])), namespace)  # noqa: S102 - 本机合成请求。
+        params = namespace["build_request_params"]()
+        params["proxies"] = {"http": None, "https": None}
+        namespace["send_request"](params)
+        assert received == {
+            "headers": ["one", "two"],
+            "path": "/api?tag=a&tag=b",
+            "body": b"payload",
+        }
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_editing_query_uses_modified_params(monkeypatch):
+    """修改拆开的 Query 后不能再使用旧 raw_query 覆盖。"""
+    _, namespace, module = load_script(monkeypatch, [example_flow()])
+    params = namespace["build_request_params"]()
+    params["params"] = {"token": "new+value", "empty": ""}
+    namespace["send_request"](params)
+    assert module.request.call_args.kwargs["url"] == "https://example.test/api"
+    assert module.request.call_args.kwargs["params"] == params["params"]
+
+
+def test_export_url_override_does_not_change_capture(tmp_path):
+    """详情编辑 URL 只改变生成代码，原始请求与正文保持不变。"""
+    flow = example_flow(b"unchanged")
+    original_url = flow["request"]["url"]
+    store = SimpleNamespace(get_flow=Mock(return_value=flow))
+    target = tmp_path / "request.py"
+    write_export(
+        store,
+        "session",
+        ["one"],
+        "requests",
+        target,
+        request_url="https://new.example/api?x=1",
+    )
+    namespace = {"__name__": "test_export"}
+    exec(target.read_text(), namespace)  # noqa: S102 - 合成请求代码。
+    params = namespace["build_request_params"]()
+    assert params["url"] == "https://new.example/api"
+    assert params["params"] == {"x": "1"}
+    assert params["data"] == b"unchanged"
+    assert flow["request"]["url"] == original_url
+
+
+def test_invalid_export_url_returns_validation_error():
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as client:
+        result = client.post(
+            "/api/sessions/session/export",
+            json={
+                "ids": ["one"],
+                "format": "curl",
+                "request_url": "file:///tmp/private",
+            },
+        )
         assert result.status_code == 400
-        assert "重复请求头" in result.json()["detail"]

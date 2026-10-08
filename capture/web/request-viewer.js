@@ -158,9 +158,11 @@ async function copyMessageText(text) {
 class RequestViewer {
   constructor() {
     this.dialog = document.getElementById("requestViewer");
+    this.webSocketViewer = new WebSocketViewer(document.getElementById("viewerWebSocket"));
     this.flow = null;
     this.part = "request";
     this.parsed = null;
+    this.urlDraft = null;
     this.queryExpanded = false;
     this.queryJson = "{}";
     this.copyContent = "";
@@ -173,6 +175,15 @@ class RequestViewer {
         this.render(true);
       };
     });
+    document.getElementById("viewerUrl").oninput = event => {
+      this.urlDraft = event.target.value;
+      const query = parseQueryParameters(this.urlDraft);
+      this.queryJson = query.json;
+      document.getElementById("viewerQueryJson").textContent = query.json;
+      document.getElementById("viewerQueryToggle").hidden = query.count === 0;
+      document.getElementById("viewerQueryCopy").hidden = query.count === 0;
+      document.getElementById("viewerQueryJson").hidden = query.count === 0 || !this.queryExpanded;
+    };
     document.getElementById("viewerMode").onchange = () => this.render();
     document.getElementById("viewerCopy").onclick = async () => {
       try {
@@ -219,7 +230,11 @@ class RequestViewer {
     };
     this.dialog.addEventListener("close", () => {
       this.sequence++;
+      this.webSocketViewer.reset();
       this.flow = null;
+      this.urlDraft = null;
+      document.getElementById("viewerUrl").value = "";
+      document.getElementById("viewerUrl").disabled = true;
       this.parsed = null;
       this.copyContent = "";
       this.resetQuery();
@@ -243,6 +258,7 @@ class RequestViewer {
   async open(session, id, part = "request") {
     const sequence = ++this.sequence;
     this.flow = null;
+    this.urlDraft = null;
     this.session = session;
     this.id = id;
     this.part = part;
@@ -255,22 +271,24 @@ class RequestViewer {
     document.getElementById("viewerHeadersCount").textContent = "";
     document.getElementById("viewerCopyHeaders").disabled = true;
     document.getElementById("viewerCopyMessage").disabled = true;
-    document.getElementById("viewerUrl").textContent = "正在读取完整请求…";
+    document.getElementById("viewerUrl").value = "";
+    document.getElementById("viewerUrl").disabled = true;
+    document.getElementById("viewerMethod").textContent = "—";
     document.getElementById("viewerRaw").textContent = "";
     document.getElementById("viewerTree").replaceChildren();
     document.getElementById("viewerNotice").textContent = "加载中…";
     document.getElementById("viewerCopy").disabled = true;
+    this.webSocketViewer.reset();
+    document.getElementById("viewerHttpMessage").hidden = false;
     document.getElementById("viewerMode").value = "raw";
     document.getElementById("viewerRaw").hidden = false;
     document.getElementById("viewerTree").hidden = true;
     document.getElementById("viewerCollapse").hidden = true;
     if (!this.dialog.open) this.dialog.showModal();
     try {
-      const response = await fetch(
-        `/api/sessions/${encodeURIComponent(session)}/flows/${encodeURIComponent(id)}?text_only=true`,
+      const flow = await readRequests.json(
+        `/api/sessions/${encodeURIComponent(session)}/flows/${encodeURIComponent(id)}?text_only=true`, "full-detail",
       );
-      if (!response.ok) throw new Error(`读取失败（${response.status}）`);
-      const flow = await response.json();
       if (sequence !== this.sequence || !this.dialog.open) return;
       this.flow = flow;
       this.render(true);
@@ -284,11 +302,9 @@ class RequestViewer {
   async refresh(session, id) {
     if (!this.dialog.open || session !== this.session || id !== this.id) return;
     const sequence = ++this.sequence;
-    const response = await fetch(
-      `/api/sessions/${encodeURIComponent(session)}/flows/${encodeURIComponent(id)}?text_only=true`,
+    const flow = await readRequests.json(
+      `/api/sessions/${encodeURIComponent(session)}/flows/${encodeURIComponent(id)}?text_only=true`, "full-detail",
     );
-    if (!response.ok) return;
-    const flow = await response.json();
     if (sequence !== this.sequence || !this.dialog.open) return;
     const completed =
       this.flow?.status === "pending" && flow.status !== "pending";
@@ -299,13 +315,27 @@ class RequestViewer {
   /** 每次切换报文重新判断 JSON；正文与头部始终以文本插入。 */
   render(resetMode = false) {
     if (!this.flow) return;
+    const wsButton = this.dialog.querySelector('[data-viewer-part="websocket"]');
+    wsButton.hidden = !this.flow.websocket;
+    if (this.part === "websocket" && !this.flow.websocket) this.part = "response";
+    const ws = this.part === "websocket";
+    document.getElementById("viewerWebSocket").hidden = !ws;
+    document.getElementById("viewerHttpMessage").hidden = ws;
+    this.dialog.querySelectorAll("[data-viewer-part]").forEach(button => {
+      const active = button.dataset.viewerPart === this.part;
+      button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active));
+    });
     const message = this.flow[this.part];
     const mode = document.getElementById("viewerMode");
     const raw = document.getElementById("viewerRaw");
     const tree = document.getElementById("viewerTree");
+    const sse = this.part === "response" && isEventStream(message);
+    const events = document.getElementById("viewerEvents");
+    setBodyDownload(document.getElementById("viewerDownloadBody"), this.session, this.id, this.part, message);
     const decodedBody = decodeRequestBody(message);
     const replayable =
       !!this.flow.request &&
+      !this.flow.websocket &&
       !this.flow.request.truncated &&
       this.flow.status !== "pending";
     document.getElementById("viewerReplay").disabled = !replayable;
@@ -320,16 +350,18 @@ class RequestViewer {
     document.getElementById("viewerHeadersCount").textContent =
       `${message?.headers?.length || 0} 项`;
     document.getElementById("viewerCopyHeaders").disabled = !message;
-    document.getElementById("viewerCopyMessage").disabled = !message;
+    document.getElementById("viewerCopyMessage").disabled = ws || !message;
     renderMessageHeaders(document.getElementById("viewerHeaders"), message);
     this.dialog.querySelectorAll("[data-viewer-part]").forEach((button) => {
       const active = button.dataset.viewerPart === this.part;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
-    document.getElementById("viewerUrl").textContent =
-      `${response ? `${message?.http_version || "HTTP"} ${this.flow.code || ""} · ` : `${message?.method || this.flow.method || ""} `}${message?.url || this.flow.url || ""}`;
-    const query = parseQueryParameters(message?.url || this.flow.url || "");
+    if (this.urlDraft === null) this.urlDraft = this.flow.request?.url || this.flow.url || "";
+    document.getElementById("viewerUrl").value = this.urlDraft;
+    document.getElementById("viewerUrl").disabled = !this.flow.request;
+    document.getElementById("viewerMethod").textContent = this.flow.request?.method || this.flow.method || "—";
+    const query = parseQueryParameters(this.urlDraft);
     this.queryJson = query.json;
     document.getElementById("viewerQueryToggle").hidden = query.count === 0;
     document.getElementById("viewerQueryCopy").hidden = query.count === 0;
@@ -338,6 +370,10 @@ class RequestViewer {
     document.getElementById("viewerQueryToggle").textContent = this.queryExpanded
       ? "收起 Query JSON"
       : "查看 Query JSON";
+    if (ws) {
+      this.webSocketViewer.show(this.session, this.id);
+      return;
+    }
     let validJson = false;
     this.parsed = null;
     if (
@@ -354,13 +390,15 @@ class RequestViewer {
         (option.value === "formatted" || option.value === "tree") &&
         !validJson;
       if (option.value === "decoded") option.disabled = !decodedBody.changed;
+      if (option.value === "events") option.disabled = !sse;
     }
     if (resetMode)
       mode.value =
-        validJson && (decodedBody.changed || this.part === "response")
+        sse ? "events" : validJson && (decodedBody.changed || this.part === "response")
           ? "tree"
           : "raw";
-    if (!validJson && mode.value !== "decoded") mode.value = "raw";
+    if (mode.value === "events" && !sse) mode.value = "raw";
+    if (!validJson && !["decoded", "events"].includes(mode.value)) mode.value = "raw";
     const notice = [];
     if (!message)
       notice.push(
@@ -369,11 +407,13 @@ class RequestViewer {
           : this.flow.reason ||
               "这条记录没有该报文，TLS 透传无法查看 HTTP 内容。",
       );
-    if (message?.truncated)
+    const captureNotice = bodyCaptureNotice(message);
+    if (captureNotice) notice.push(captureNotice);
+    if (message?.truncated && !message.body_state)
       notice.push("采集时正文已截断或未采集，以下是已保存内容。");
     if (message?.display_truncated)
       notice.push(
-        "解压后的文本超过 16 MiB 展示上限，完整原始字节可通过导出获取。",
+        "解压后的文本超过 16 MiB 展示上限，已保存原始字节可通过下载获取。",
       );
     if (message?.decode_error)
       notice.push("正文解码失败，以下展示原始字节的文本视图。");
@@ -393,10 +433,16 @@ class RequestViewer {
     document.getElementById("viewerNotice").textContent = notice.join(" ");
     document.getElementById("viewerCopy").disabled = !message;
     document.getElementById("viewerCollapse").hidden = mode.value !== "tree";
-    raw.hidden = mode.value === "tree";
+    events.hidden = mode.value !== "events";
+    events.replaceChildren();
+    raw.hidden = ["tree", "events"].includes(mode.value);
     tree.hidden = mode.value !== "tree";
     tree.replaceChildren();
-    if (mode.value === "raw") {
+    if (mode.value === "events") {
+      this.copyContent = message?.body_text || "";
+      renderSseEvents(events, this.copyContent);
+      raw.textContent = "";
+    } else if (mode.value === "raw") {
       this.copyContent = message?.body_text || "";
       raw.textContent =
         this.copyContent || (message ? "（空正文）" : "暂无正文内容");

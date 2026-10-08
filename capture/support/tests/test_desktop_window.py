@@ -68,3 +68,15 @@ def test_new_service_uses_current_interpreter_without_browser(monkeypatch):
     ]
     assert spawn.call_args.kwargs["cwd"] == ROOT
     backend.close()
+
+
+def test_external_tool_uses_browser_without_navigating_app(monkeypatch):
+    from capture.desktop.window import DesktopLinks
+
+    browser = Mock(return_value=True)
+    monkeypatch.setattr("capture.desktop.window.webbrowser.open", browser)
+    assert DesktopLinks().open_external_tool("https://spidertools.cn/#/") is True
+    browser.assert_called_once_with("https://spidertools.cn/#/", new=2)
+    with pytest.raises(ValueError):
+        DesktopLinks().open_external_tool("https://spidertools.cn.evil.test/")
+    assert browser.call_count == 1

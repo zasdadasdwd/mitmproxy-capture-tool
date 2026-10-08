@@ -1,5 +1,6 @@
 """有界读取会话证据，返回候选关系而不是把时间相邻当作因果。"""
 
+from .comparison import RequestComparison
 from .parameters import extract_parameters, select_parameter, value_variants
 
 
@@ -158,57 +159,7 @@ class AnalysisService:
         }
 
     def compare(self, session_id, flow_id, other_session_id, other_flow_id):
-        """按定位字段比较重复头、参数和 JSON；文本正文只返回有界片段。"""
-        left = self.store.get_flow(session_id, flow_id, preview=True)
-        right = self.store.get_flow(other_session_id, other_flow_id, preview=True)
-        a, b = extract_parameters(left), extract_parameters(right)
-        before = {item["field"]: item["value"] for item in a["fields"]}
-        after = {item["field"]: item["value"] for item in b["fields"]}
-        changes = [
-            {"field": key, "before": before.get(key), "after": after.get(key)}
-            for key in sorted(before.keys() | after.keys())
-            if before.get(key) != after.get(key)
-        ]
-        for key in ("method", "url", "code", "status"):
-            if left.get(key) != right.get(key):
-                changes.append(
-                    {"field": key, "before": left.get(key), "after": right.get(key)}
-                )
-        for part in ("original_request", "request", "response"):
-            x, y = (
-                left.get(part, {}).get("body_text", ""),
-                right.get(part, {}).get("body_text", ""),
-            )
-            if x != y:
-                changes.append(
-                    {
-                        "field": f"{part}.body_text",
-                        "before": x[:1500],
-                        "after": y[:1500],
-                        "excerpt": len(x) > 1500 or len(y) > 1500,
-                    }
-                )
-        return {
-            "left": {"session_id": session_id, "flow_id": flow_id},
-            "right": {"session_id": other_session_id, "flow_id": other_flow_id},
-            "changes": [
-                {
-                    **item,
-                    "before": item["before"][:512]
-                    if isinstance(item["before"], str)
-                    else item["before"],
-                    "after": item["after"][:512]
-                    if isinstance(item["after"], str)
-                    else item["after"],
-                    "value_limited": any(
-                        isinstance(item[key], str) and len(item[key]) > 512
-                        for key in ("before", "after")
-                    ),
-                }
-                for item in changes[:100]
-            ],
-            "total_changes": len(changes),
-            "limited": len(changes) > 100,
-            "warnings": a["warnings"] + b["warnings"],
-            "body_preview_bytes": 65536,
-        }
+        """按同一证据模型比较请求，供 HTTP UI 和 MCP 使用。"""
+        return RequestComparison(self.store).compare(
+            session_id, flow_id, other_session_id, other_flow_id
+        )

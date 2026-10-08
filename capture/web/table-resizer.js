@@ -22,6 +22,13 @@
     table.classList.add("resizable-table");
 
     const key = `capture.table-columns.${tableKey(table)}`;
+    const requestTable = Boolean(table.closest(".flow-list"));
+    // 默认给非地址列固定空间，把余下宽度留给接口；手调列宽仍保持用户比例。
+    const defaultRequestWidths = (available) => {
+      const result = [40, 62, 62, 240, 116, 72, 72, 60];
+      result[3] = Math.max(240, available - (result.reduce((sum, width) => sum + width, 0) - 240));
+      return result;
+    };
     let customWidths = false;
     let widths = cells.map((cell) => Math.max(minimum, Math.round(cell.getBoundingClientRect().width)));
     try {
@@ -34,6 +41,11 @@
       // 隐私模式或损坏的旧值只影响记住列宽，不影响拖动。
     }
 
+    if (requestTable && !customWidths && widths.length === 8) {
+      widths = defaultRequestWidths(table.parentElement?.getBoundingClientRect?.().width || table.getBoundingClientRect().width);
+    }
+    // 用独立基准保存列宽比例，避免连续收窄时最小列宽挤掉原比例。
+    let preferredWidths = [...widths];
     let group = table.querySelector(":scope > colgroup");
     if (!group) {
       group = document.createElement("colgroup");
@@ -48,13 +60,15 @@
       table.style.width = `${widths.reduce((sum, width) => sum + width, 0)}px`;
     };
     applyWidths();
-    // 尚未手调的表格随面板宽度变化，手调后的列宽保持并允许横向滚动。
+    // 请求列表始终随面板恢复宽度，手调列宽保留其比例；其他表格沿用固定列宽。
     if (typeof ResizeObserver !== "undefined" && table.parentElement) {
       const observer = new ResizeObserver(([entry]) => {
         if (!table.isConnected) { observer.disconnect(); return; }
-        if (customWidths || entry.contentRect.width <= 0) return;
-        const total = widths.reduce((sum, width) => sum + width, 0);
-        widths = widths.map((width) => Math.max(minimum, width * entry.contentRect.width / total));
+        if ((!requestTable && customWidths) || entry.contentRect.width <= 0) return;
+        const total = preferredWidths.reduce((sum, width) => sum + width, 0);
+        widths = requestTable && !customWidths && widths.length === 8
+          ? defaultRequestWidths(entry.contentRect.width)
+          : preferredWidths.map((width) => Math.max(minimum, width * entry.contentRect.width / total));
         applyWidths();
       });
       observer.observe(table.parentElement);
@@ -76,6 +90,7 @@
           maximum,
           Math.max(minimum, widths[index] + (event.key === "ArrowRight" ? 16 : -16)),
         );
+        preferredWidths = [...widths];
         applyWidths();
         try {
           localStorage.setItem(key, JSON.stringify(widths));
@@ -97,6 +112,7 @@
           applyWidths();
         }
         function finish() {
+          preferredWidths = [...widths];
           handle.removeEventListener("pointermove", move);
           handle.removeEventListener("pointerup", finish);
           handle.removeEventListener("pointercancel", finish);

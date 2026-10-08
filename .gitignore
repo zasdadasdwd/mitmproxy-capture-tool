@@ -12,3 +12,6 @@ capture/support/docs/images/
 .ruff_cache/
 
 dist/
+
+# 本机研究与样本，不推送。
+/jd/

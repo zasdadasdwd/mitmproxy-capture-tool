@@ -12,12 +12,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from mitmproxy import http, tls
+from mitmproxy import ctx, http, tls
 
 from capture.engine.hooks import HookRunner
 from capture.engine.policy import is_blocked, should_decrypt
+from capture.engine.streaming import StreamWriter
+from capture.engine.transport import connection_snapshot
+from capture.engine.websocket_capture import accepted_websocket_event, websocket_event
 from capture.plugins.base import discover_hooks
-from config import load_startup
+from config import DATA, load_startup
 
 logger = logging.getLogger("capture.addon")
 
@@ -31,6 +34,11 @@ def snapshot(message, limit: int) -> dict:
         "body_b64": base64.b64encode(body[:limit]).decode(),
         "body_size": len(body),
         "truncated": len(body) > limit or raw is None,
+        "body_state": "not_cached"
+        if raw is None
+        else "truncated"
+        if len(body) > limit
+        else "complete",
         "http_version": message.http_version,
     }
 
@@ -56,15 +64,36 @@ class CaptureAddon:
         self.hooks = HookRunner(self.hook_snapshot)
         self.capture_session = os.environ.get("CAPTURE_SESSION") or None
         self.control_sequence = 0
+        self.stream_writer = None
+        self.stream_flows = {}
+        self.stream_bodies = {}
 
     def running(self):
         """引擎就绪后启动发送与配置轮询，并通知管理进程。"""
+        self.stream_writer = StreamWriter(
+            Path(os.environ.get("CAPTURE_BODY_ROOT", DATA / "captures"))
+        )
         self.tasks = [
             asyncio.create_task(self.send_events()),
             asyncio.create_task(self.watch_settings()),
             asyncio.create_task(self.watch_capture()),
+            asyncio.create_task(self.watch_parent()),
+            asyncio.create_task(self.watch_streams()),
         ]
         self.emit({"type": "ready", "version": self.settings["version"]})
+
+    async def watch_parent(self):
+        """管理进程被强制结束时主动退出，避免独立进程组继续占用代理端口。"""
+        parent = os.environ.get("CAPTURE_PARENT_PID")
+        if not parent:
+            return  # 保持手动加载 addon 时的原有行为。
+        parent_pid = int(parent)
+        while True:
+            await asyncio.sleep(1)
+            if os.getppid() != parent_pid:
+                logger.warning("管理进程已退出，关闭残留代理并释放监听端口")
+                ctx.master.shutdown()
+                return
 
     def emit(self, event):
         """只序列化一次；数量及字节双重限制兼顾突发小事件与正文内存。"""
@@ -124,6 +153,7 @@ class CaptureAddon:
             try:
                 settings = json.loads(self.settings_path.read_text())
                 if settings["version"] != self.settings["version"]:
+                    ctx.options.update(stream_large_bodies=str(settings["body_limit"]))
                     self.settings = settings
                     self.emit({"type": "policy", "version": settings["version"]})
             except Exception:
@@ -140,6 +170,9 @@ class CaptureAddon:
                 control = json.loads(Path(path).read_text())
                 if control["sequence"] == self.control_sequence:
                     continue
+                if self.stream_writer and self.capture_session:
+                    await self.stream_writer.stop_session(self.capture_session)
+                    self.update_streams()
                 self.control_sequence = control["sequence"]
                 self.capture_session = control["session_id"]
                 if self.capture_session:
@@ -153,8 +186,11 @@ class CaptureAddon:
             except (OSError, ValueError, KeyError):
                 logger.exception("无法切换记录状态")
 
-    def done(self):
+    async def done(self):
         """事件循环停止后，用短时同步连接尽量写完队列里的剩余事件。"""
+        if self.stream_writer:
+            await self.stream_writer.shutdown()
+            self.update_streams()
         if self.queue.empty():
             return
         try:
@@ -242,6 +278,15 @@ class CaptureAddon:
     def requestheaders(self, flow):
         """HTTP 头到达时尽早拒绝，避免等待完整上传正文。"""
         flow.metadata["capture_session"] = self.capture_session
+        flow.metadata.setdefault("client_http_version", flow.request.http_version)
+        length = flow.request.headers.get("content-length", "")
+        if (
+            flow.request.stream
+            or "chunked" in flow.request.headers.get("transfer-encoding", "").lower()
+            or (length.isdigit() and int(length) > self.settings["body_limit"])
+        ):
+            flow.request.stream = flow.request.stream or True
+            self.attach_stream(flow, "request")
         if is_blocked(flow.request.host, self.settings):
             flow.metadata["blocked"] = True
             flow.response = http.Response.make(403, b"Domain blocked by capture policy")
@@ -294,14 +339,77 @@ class CaptureAddon:
             now_ms=lambda: int(time.time() * 1000),
         )
 
+    def attach_stream(self, flow, part):
+        """把流式原始字节交给共享队列，不修改网络内容及传输节奏。"""
+        message = getattr(flow, part)
+        if not self.stream_writer or not flow.metadata.get("capture_session"):
+            return
+        body = self.stream_writer.create(
+            flow.metadata["capture_session"],
+            self.settings.get("stream_body_limit", 64 * 1024 * 1024),
+            self.settings.get("save_streamed_bodies", True),
+        )
+        if body is None:
+            flow.metadata["stream_capture_error"] = "并行流式正文过多，未缓存该正文"
+            return
+        self.stream_bodies[(flow.id, part)] = body
+        self.stream_flows[flow.id] = flow
+        previous = message.stream if callable(message.stream) else None
+
+        def stream(chunk):
+            # 先观察收到的字节，不包办用户自定义流变换。
+            body.feed(chunk)
+            return previous(chunk) if previous else chunk
+
+        message.stream = stream
+
+    async def watch_streams(self):
+        """每秒补充保存状态及 SSE 预览通知，不逐个网络分片写数据库。"""
+        while True:
+            await asyncio.sleep(1)
+            self.update_streams()
+
+    def update_streams(self):
+        """只推送有变化的流；会话切换后释放引用，避免长连接累积。"""
+        for flow_id, flow in list(self.stream_flows.items()):
+            bodies = [
+                self.stream_bodies.get((flow.id, part))
+                for part in ("request", "response")
+            ]
+            bodies = [body for body in bodies if body]
+            signature = tuple(
+                (body.received, body.saved, body.finished, body.error)
+                for body in bodies
+            )
+            if flow.metadata.get("stream_signature") != signature:
+                flow.metadata["stream_signature"] = signature
+                self.publish(flow, flow.metadata.get("capture_status", "receiving"))
+            if (
+                all(body.finished for body in bodies)
+                and flow.metadata.get("capture_status")
+                in ("complete", "error", "blocked")
+            ) or flow.metadata.get("capture_session") != self.capture_session:
+                self.stream_flows.pop(flow_id, None)
+                for part in ("request", "response"):
+                    self.stream_bodies.pop((flow_id, part), None)
+
     def responseheaders(self, flow):
-        """提前更新状态；已知大响应和 SSE 采用流式转发，不缓存整份正文。"""
+        """大响应和 SSE 保持流式转发，由异步队列保存有限原始字节。"""
         length = flow.response.headers.get("content-length", "")
         content_type = flow.response.headers.get("content-type", "")
         if (
-            length.isdigit() and int(length) > self.settings["body_limit"]
-        ) or "text/event-stream" in content_type:
-            flow.response.stream = True
+            flow.response.stream
+            or (length.isdigit() and int(length) > self.settings["body_limit"])
+            or "text/event-stream" in content_type.lower()
+            or (
+                not length
+                and flow.request.method != "HEAD"
+                and flow.response.status_code not in (204, 304)
+                and flow.response.status_code >= 200
+            )
+        ):
+            flow.response.stream = flow.response.stream or True
+            self.attach_stream(flow, "response")
         self.publish(flow, "receiving", include_body=False)
 
     def response(self, flow):
@@ -330,14 +438,51 @@ class CaptureAddon:
             if flow.metadata.get("hook_error")
             else "complete"
         )
+        for part in ("request", "response"):
+            body = self.stream_bodies.get((flow.id, part))
+            if body:
+                body.finish()
         self.publish(flow, status)
 
     def error(self, flow):
         """网络错误进入同一流量记录，避免请求一直显示等待响应。"""
+        for part in ("request", "response"):
+            body = self.stream_bodies.get((flow.id, part))
+            if body:
+                body.interrupted = True
+                body.error = body.error or "网络中断，正文可能不完整"
+                body.finish()
         self.publish(flow, "error")
+
+    def websocket_start(self, flow):
+        """握手结束后标识消息查看入口，不修改 WebSocket 转发。"""
+        self.publish(flow, "complete")
+        self.record_websocket(flow, initial=True)
+
+    def websocket_message(self, flow):
+        """仅发送当前重组消息的有限快照，不反复发送历史正文。"""
+        self.record_websocket(flow)
+
+    def websocket_end(self, flow):
+        """保留关闭码与原因；未收到关闭帧的结束仍由引擎信息标识。"""
+        self.record_websocket(flow, ended=True)
+
+    def record_websocket(self, flow, ended=False, initial=False):
+        """只采集当前记录会话，连接已有但未记录的历史不能补回。"""
+        if (
+            flow.metadata.get("capture_session") != self.capture_session
+            or not self.capture_session
+        ):
+            return
+        event = websocket_event(flow, self.settings, ended=ended or initial)
+        if initial:
+            event["summary"]["state"] = "open"
+        if self.emit(event):
+            accepted_websocket_event(flow, event)
 
     def publish(self, flow, status, original=None, include_body=True):
         """将 HTTPFlow 转为可存储事件，响应头阶段只推送摘要。"""
+        flow.metadata["capture_status"] = status
         session_id = flow.metadata.get("capture_session")
         if not session_id or session_id != self.capture_session:
             return
@@ -356,20 +501,36 @@ class CaptureAddon:
             or (str(flow.error) if flow.error else ""),
             "tls": request.scheme == "https",
             "source": "capture",
+            "transport": {
+                "client": connection_snapshot(
+                    flow.client_conn,
+                    flow.metadata.get("client_http_version", request.http_version),
+                ),
+                "upstream": connection_snapshot(flow.server_conn),
+            },
             "executed_hooks": list(flow.metadata.get("executed_hooks", [])),
         }
         if original is not None:
             detail["original_request"] = original
-        includes_request = include_body and not flow.metadata.get("request_saved")
+        includes_request = include_body and (
+            not flow.metadata.get("request_saved")
+            or self.stream_bodies.get((flow.id, "request"))
+        )
         if includes_request:
             detail["request"] = snapshot(request, self.settings["body_limit"])
+            if body := self.stream_bodies.get((flow.id, "request")):
+                detail["request"].pop("body_b64", None)
+                detail["request"].update(body.snapshot())
             detail["request"].update(url=request.url, method=request.method)
         if flow.response:
             detail["code"] = flow.response.status_code
-            if include_body:
+            if include_body or self.stream_bodies.get((flow.id, "response")):
                 detail["response"] = snapshot(
                     flow.response, self.settings["body_limit"]
                 )
+                if body := self.stream_bodies.get((flow.id, "response")):
+                    detail["response"].pop("body_b64", None)
+                    detail["response"].update(body.snapshot())
                 detail["size"] = detail["response"]["body_size"]
             if flow.response.timestamp_end:
                 detail["duration"] = round(

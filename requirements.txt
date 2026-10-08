@@ -1,7 +1,8 @@
 mitmproxy>=12,<13
 fastapi>=0.115,<1
 uvicorn[standard]>=0.34,<1
-httpx>=0.28,<1
+httpx[http2]>=0.28,<1
 Brotli>=1.2,<2
 Markdown>=3.7,<4
 mcp>=1.30,<2
+requests>=2.32,<3

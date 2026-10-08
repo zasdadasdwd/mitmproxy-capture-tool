@@ -352,13 +352,16 @@ tbody tr.active {
 .status-passthrough {
   color: var(--warning);
 }
-.url-cell strong {
+.url-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.request-interface, .request-host {
   display: block;
-  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.url-cell small {
-  color: var(--muted);
-}
+.request-host { font-size: 11px; margin-top: 3px; }
 .pagination {
   border-top: 1px solid var(--border);
   display: flex;
@@ -1475,6 +1478,16 @@ header .header-actions a {
 }
 .toolbar-search {
   flex: 1;
+  flex-wrap: wrap;
+}
+#quickSearchScope {
+  width: 160px;
+  max-width: 100%;
+  min-height: 34px;
+}
+.toolbar-search #search {
+  flex: 1;
+  min-width: 140px;
 }
 .toolbar-actions {
   justify-content: flex-end;
@@ -1945,10 +1958,7 @@ button {
   user-select: text;
 }
 .viewer-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: block;
   padding: 0 12px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -1960,12 +1970,15 @@ button {
 }
 .viewer-actions {
   display: flex;
-  flex: 1 1 100%;
+  flex: none;
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 8px;
 }
-.viewer-actions button {
-  flex: 1 1 120px;
+.viewer-actions > button {
+  flex: 0 0 auto;
+  min-width: 90px;
 }
 .viewer-notice {
   padding: 10px 18px;
@@ -2437,3 +2450,170 @@ table.resizable-table tr > th:nth-child(n),
 table.resizable-table tr > td:nth-child(n) { width: auto; }
 table.resizable-table td.resizable-cell { position: relative; }
 table.resizable-table .column-resizer { right: 0; }
+
+/* 表头按钮保持紧凑，列宽拖动手柄独立于排序点击区域。 */
+.sort-heading { border: 0; background: transparent; padding: 2px 8px 2px 0; color: inherit; font: inherit; white-space: nowrap; box-shadow: none; }
+.sort-heading.active { color: var(--text); background: transparent; }
+.sort-heading:hover { color: var(--text); background: var(--hover); }
+#timeSortHeader { width: 110px; }
+
+.vertical-area { overflow: auto; min-height: 64px; max-height: 45vh; }
+.vertical-area-handle { height: 10px; flex: 0 0 10px; cursor: ns-resize; touch-action: none; border-top: 1px solid var(--border); position: relative; }
+.vertical-area-handle::after { content: ""; position: absolute; width: 36px; height: 3px; border-radius: 3px; background: var(--border); left: calc(50% - 18px); top: 3px; }
+.vertical-area-handle:hover::after { background: var(--primary); }
+.vertical-area[hidden] + .vertical-area-handle { display: none; }
+details:not([open]) .vertical-area-handle { display: none; }
+#viewerBodyArea > #viewerRaw, #viewerBodyArea > #viewerTree { max-height: none; overflow: visible; }
+.detail-export-menu { position: relative; }
+.detail-export-menu summary { cursor: pointer; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.detail-export-menu .detail-policy-options { z-index: 5; }
+
+.vertical-area { flex: none; }
+#viewerBodyArea, #detailContent.vertical-area { height: 280px; }
+
+#requestViewer { overflow-y: auto; }
+
+.curl-copy-dialog { width: min(850px, 92vw); padding: 20px; }
+#curlCopyText { width: 100%; height: 40vh; min-height: 160px; max-height: 65vh; resize: vertical; box-sizing: border-box; font: 12px/1.7 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+
+.detail-export-menu > summary { list-style: none; white-space: nowrap; }
+.detail-export-menu > summary::-webkit-details-marker { display: none; }
+.detail-export-options { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; min-width: 140px; display: grid; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 20px #0002; }
+.detail-export-options button { width: 100%; text-align: left; }
+
+.message-body-section { flex: none; min-width: 0; border-bottom: 1px solid var(--border); }
+.message-body-section > summary { cursor: pointer; list-style: none; }
+.message-body-section > summary::before { content: "▸"; }
+.message-body-section[open] > summary::before { content: "▾"; }
+.message-body-section > summary::-webkit-details-marker { display: none; }
+#detailPanel { overflow-y: auto; }
+#detailPanel > .detail-header.vertical-area, #detailPanel > .tabs.vertical-area,
+#requestViewer > .viewer-heading.vertical-area, #requestViewer .tabs.vertical-area { min-height: 36px; }
+#detailPanel > .detail-actions.vertical-area, #requestViewer .viewer-actions.vertical-area { overflow: visible; }
+
+/* 控件区永远为自身内容预留空间；收缩的是数据区而不是按钮高度。 */
+#detailPanel > .detail-actions, #requestViewer .viewer-actions {
+  height: auto; max-height: none; min-height: 54px; flex-shrink: 0; align-content: flex-start;
+}
+.detail-main-actions { align-items: flex-start; min-width: 0; }
+.detail-main-actions > button { flex: 1 0 88px; min-height: 34px; }
+.detail-export-menu { flex: 0 0 auto; min-width: 88px; align-self: flex-start; }
+.detail-export-menu > summary { display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; min-height: 34px; }
+.detail-export-menu > summary::after { content: "▾"; }
+.detail-export-menu[open] > summary::after { content: "▴"; }
+.detail-policy-actions { flex: 0 0 auto; min-width: 110px; }
+.detail-policy-actions > summary { box-sizing: border-box; min-height: 34px; }
+.detail-policy-actions[open] { flex: 1 0 100%; }
+.detail-policy-actions[open] > summary::after { content: "⌃"; }
+.detail-policy-options { min-height: 42px; }
+.detail-policy-options > button { flex: 1 0 145px; min-height: 34px; }
+.viewer-actions > button { flex-shrink: 0; }
+
+.detail-export-menu > summary:hover,
+.detail-export-menu[open] > summary {
+  color: var(--blue); background: var(--selection); border-color: var(--blue);
+}
+.detail-export-menu > summary:focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 2px;
+}
+.detail-export-options > button:hover,
+.detail-export-options > button:focus-visible,
+.detail-export-options > button[aria-pressed="true"] {
+  color: var(--blue); background: var(--selection); border-color: var(--blue);
+}
+
+/* 完整详情的页签与按钮分别占一行，按钮换行后由工具栏自然撑高。 */
+.viewer-toolbar { height: auto; min-height: min-content; max-height: none; overflow: visible; }
+.viewer-toolbar .tabs { min-height: 38px; align-items: center; }
+.viewer-toolbar .viewer-actions { height: auto; min-height: 34px; max-height: none; }
+.viewer-actions .detail-export-menu { min-width: 90px; }
+
+/* 完整详情：地址、操作、页签、数据区依次排列；控制区保持自然高度。 */
+#requestViewer > .tabs { flex: none; min-height: 42px; overflow-x: auto; align-items: center; }
+#requestViewer > .tabs > button { flex: none; white-space: nowrap; }
+#requestViewer > .query-preview { flex: none; border-bottom: 1px solid var(--border); padding-top: 8px; }
+#requestViewer .viewer-url-wrap { max-height: 120px; }
+#requestViewer .viewer-url { min-height: 0; padding: 10px 18px; }
+#requestViewer .viewer-toolbar { padding: 10px 18px; background: var(--surface-muted); }
+#requestViewer .viewer-actions { margin-top: 0; }
+#viewerHeaders { max-height: 180px; }
+#viewerCopyMessage { margin-left: auto; }
+@media (max-width: 600px) { #viewerCopyMessage { margin-left: 0; } }
+
+.viewer-url-editor { display: flex; align-items: center; gap: 10px; padding: 12px 18px; }
+.viewer-method { flex: none; font-weight: 600; color: var(--blue); }
+#viewerUrl { flex: 1; min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font: 13px/1.5 ui-monospace, monospace; }
+#viewerUrl:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+/* 策略弹层不参与布局，展开与收起保持工具栏和详情的位置不变。 */
+.detail-policy-actions, .detail-policy-actions[open] { position: relative; flex: 0 0 auto; }
+.detail-policy-options { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(320px, 75vw); padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px #0002; }
+.detail-policy-options > button { flex: 1 1 100%; }
+/* 编辑器采用紧凑参数表；原文输入框明确铺满容器，避免 inline 尺寸回退。 */
+#editDialog { width: min(900px, 94vw); box-sizing: border-box; overflow-y: auto; }
+#editDialog label { display: flex; flex-direction: column; gap: 6px; }
+#editRawFields label { margin-bottom: 12px; }
+#editRawFields textarea, #editRawFields select { width: 100%; min-width: 0; box-sizing: border-box; }
+#editRawFields textarea { display: block; padding: 10px; }
+#editTableNotice:empty { display: none; }
+#editDialog .replay-part-tabs { margin: 12px 0 6px; padding: 0; }
+#editDialog .replay-part-tabs button { flex: none; padding: 7px 12px; font-size: 12px; }
+#editTableFields > p { font-size: 11px; margin: 8px 0; }
+.replay-table-wrap { max-height: 42vh; overflow: auto; margin: 8px 0; border: 1px solid var(--border); border-radius: 6px; }
+#editDialog .replay-parameter-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+#editDialog .replay-parameter-table th { padding: 7px 6px; font-size: 11px; text-align: left; }
+#editDialog .replay-parameter-table th:first-child { width: 27%; }
+#editDialog .replay-parameter-table th:nth-child(2) { width: auto; }
+#editDialog .replay-parameter-table th:last-child { width: 92px; }
+#editDialog .replay-parameter-table td { padding: 3px 5px; vertical-align: top; }
+#editDialog .replay-parameter-table input, #editDialog .replay-parameter-table textarea {
+  display: block; width: 100%; min-width: 0; box-sizing: border-box; height: 28px; min-height: 28px;
+  padding: 4px 6px; font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-radius: 3px; border: 1px solid transparent; background: transparent; resize: none;
+}
+#editDialog .replay-parameter-table input:hover, #editDialog .replay-parameter-table textarea:hover { border-color: var(--border); }
+#editDialog .replay-parameter-table textarea.expanded { height: 132px; white-space: pre-wrap; overflow-wrap: anywhere; border-color: var(--border); resize: vertical; }
+#editDialog .replay-parameter-table .replay-value-cell { position: relative; padding-right: 26px; }
+#editDialog .replay-parameter-table button { min-height: 24px; height: 24px; padding: 1px 5px; margin: 2px 1px; font-size: 11px; border-radius: 4px; }
+#editDialog .replay-parameter-table .replay-expand-value { position: absolute; right: 3px; top: 5px; width: 20px; margin: 0; padding: 0; background: transparent; border-color: transparent; color: var(--muted); }
+#editDialog .replay-parameter-table td:last-child { white-space: nowrap; }
+#editAddRow { font-size: 12px; padding: 4px 10px; min-height: 28px; }
+@media (max-width: 600px) { #editDialog { padding: 14px; } .replay-table-wrap { max-height: 38vh; } }
+/* 两端连接摘要与正文隔离，长连接 ID 不挤压详情宽度。 */
+.connection-info { padding: 12px 16px; }
+.connection-info > p { font-size: 11px; line-height: 1.6; }
+.connection-info section { margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.connection-info h3 { margin: 0 0 8px; font-size: 12px; }
+.connection-info dl { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 7px 10px; margin: 0; font-size: 12px; }
+.connection-info dt { color: var(--muted); }
+.connection-info dd { margin: 0; overflow-wrap: anywhere; }
+.connection-info pre { max-height: 240px; overflow: auto; }
+
+/* SSE 与原文下载沿用现有主题，不扩大工具栏。 */
+.sse-events { padding: 12px; overflow: auto; }
+.sse-events section { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.sse-events pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
+#detailDownloadBody, #viewerDownloadBody { font-size: 12px; margin-left: 8px; }
+#bodyCacheLimit, #streamBodyLimit { width: 100px; }
+
+/* WebSocket 消息沿用正文详情样式，列表独立分页。 */
+.websocket-messages { padding: 12px; overflow: auto; min-width: 0; }
+.websocket-messages details { border-bottom: 1px solid var(--border); padding: 8px 0; }
+.websocket-messages summary { overflow-wrap: anywhere; font-size: 12px; cursor: pointer; }
+.websocket-messages pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+.websocket-messages button { padding: 4px 8px; margin: 6px 0; font-size: 12px; }
+.websocket-pagination { display: flex; gap: 12px; align-items: center; }
+
+/* 请求对比只使用浮层菜单；双列值在窄窗口内换行。 */
+.comparison-dialog { width: min(1100px, 96vw); max-width: 96vw; box-sizing: border-box; max-height: 90vh; overflow: auto; padding: 18px; }
+.comparison-dialog > .dialog-heading { position: sticky; top: -18px; background: var(--surface); z-index: 2; }
+.comparison-labels { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.comparison-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.comparison-tabs { flex-wrap: wrap; gap: 4px; }
+.comparison-table { width: 100%; table-layout: fixed; }
+.comparison-table th, .comparison-table td { width: auto; padding: 8px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comparison-table th:first-child { width: 28%; font-size: 12px; }
+.comparison-table pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.comparison-table [data-kind="added"] th { color: var(--success, #248151); }
+.comparison-table [data-kind="removed"] th { color: var(--danger, #b84040); }
+[data-compare-menu] .detail-export-options { min-width: 185px; }

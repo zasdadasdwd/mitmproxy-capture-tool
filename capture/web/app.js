@@ -9,6 +9,8 @@ const state = {
   activeId: null,
   tab: "request",
   offset: 0,
+  sortBy: "started",
+  sortOrder: "none",
   total: 0,
   status: null,
   runtimeId: null,
@@ -115,6 +117,8 @@ async function api(path, options = {}) {
   return response;
 }
 async function json(path, options) {
+  if (!options || !options.method || options.method.toUpperCase() === "GET")
+    return readRequests.json(path, /\/flows\?/.test(path) ? "flow-list" : /\/flows\/[^/?]+\?preview=true$/.test(path) ? "flow-detail" : null);
   return (await api(path, options)).json();
 }
 function toast(message) {
@@ -128,10 +132,19 @@ function action(fn) {
     try {
       await fn(...args);
     } catch (error) {
-      toast(error.message);
+      if (error.name !== "AbortError") toast(error.message);
     }
   };
 }
+const flowComparison = new FlowComparison($("comparisonDialog"), scope => scope === "viewer"
+  ? {session: requestViewer.session, id: requestViewer.id, flow: requestViewer.flow}
+  : {session: state.session, id: state.activeId, flow: state.detail}, toast);
+$("compareSelected").onclick = action(async () => {
+  if (!state.session || state.selected.size !== 2) return;
+  const [left, right] = [...state.selected];
+  $("flowActions").open = false;
+  await flowComparison.open({session: state.session, id: left}, {session: state.session, id: right});
+});
 function size(bytes) {
   return bytes >= 1048576
     ? (bytes / 1048576).toFixed(1) + " MB"
@@ -293,8 +306,33 @@ async function refreshSessions() {
     $("replayRecords").append(row);
   }
 }
+/** 每个会话保存独立筛选，避免重放批次覆盖来源条件。 */
+const sessionFilters = new Map();
+function filterSnapshot() {
+  return {
+    values: Object.fromEntries(["search", "quickSearchScope", "filterKeyword", "searchScope", ...Object.keys(filterFields)].map(id => [id, $(id).value])),
+    advancedExpression: structuredClone(state.advancedExpression),
+    directory: structuredClone(state.directory),
+  };
+}
+function restoreFilters(snapshot) {
+  for (const id of ["search", "quickSearchScope", "filterKeyword", "searchScope", ...Object.keys(filterFields)])
+    $(id).value = snapshot?.values[id] ?? (id.endsWith("Scope") ? "url" : "");
+  state.advancedExpression = structuredClone(snapshot?.advancedExpression ?? null);
+  state.directory = structuredClone(snapshot?.directory ?? null);
+  $("directoryFilter").hidden = !state.directory;
+  if (state.directory) $("directoryFilter").textContent = `目录：${state.directory.host}${state.directory.path || ""} · 包含子目录`;
+  setQuickFilterDisabled(Boolean(state.advancedExpression));
+  syncFilterControls();
+}
 function switchSession(id) {
+  if (state.session) sessionFilters.set(state.session, filterSnapshot());
+  clearTimeout($("search").timer);
+  state.refreshSequence++;
+
   state.followReplay = null;
+  if (state.sessions?.some(session => session.id === state.session && session.kind === "capture"))
+    state.lastCaptureSession = state.session;
   state.session = id;
   state.offset = 0;
   state.selected.clear();
@@ -306,8 +344,11 @@ function switchSession(id) {
   state.directoryOpen.clear();
   state.directorySignature = null;
   clearTimeout(state.directoryTimer);
+  // 清除句柄，否则 scheduleDirectories 会误以为旧刷新仍在等待。
+  state.directoryTimer = null;
   $("directoryTree").replaceChildren();
   $("directoryFilter").hidden = true;
+  restoreFilters(sessionFilters.get(id));
   renderDetail();
   renderSelection();
 }
@@ -336,8 +377,8 @@ function scheduleDirectories() {
       if (session !== state.session) return;
       const signature = JSON.stringify(records);
       if (signature === state.directorySignature) return;
-      state.directorySignature = signature;
       renderDirectories(records);
+      state.directorySignature = signature;
     }),
     state.directorySignature ? 2000 : 0,
   );
@@ -445,15 +486,23 @@ $("clearDirectory").onclick = () => {
   filtersChanged();
 };
 
+/** 内外关键词互斥，范围始终随当前关键词提交。 */
+function activeKeyword() {
+  const inner = $("filterKeyword").value.trim();
+  return inner ? { search: inner, scope: $("searchScope").value }
+    : { search: $("search").value.trim(), scope: $("quickSearchScope").value };
+}
 /** 列表与选择筛选结果共用参数，避免显示和批量操作范围不一致。 */
 function filterParams() {
   const parameters = new URLSearchParams();
+  parameters.set("sort_by", state.sortBy);
+  parameters.set("sort_order", state.sortOrder);
   if (state.advancedExpression) {
     parameters.set("expression", JSON.stringify(state.advancedExpression));
   } else {
-    if ($("search").value.trim())
-      parameters.set("search", $("search").value.trim());
-    parameters.set("scope", $("searchScope").value);
+    const keyword = activeKeyword();
+    if (keyword.search) parameters.set("search", keyword.search);
+    parameters.set("scope", keyword.scope);
     for (const [id, key] of Object.entries(filterFields)) {
       const value = $(id).value.trim();
       if (value) parameters.set(key, value);
@@ -487,6 +536,15 @@ async function refreshFlows() {
     filters !== filterParams().toString()
   )
     return;
+  // 删除末页记录后回到有效页；先通过查询序号校验，防止切换会话时跳页。
+  if (state.offset > 0 && state.offset >= result.total) {
+    state.offset = result.total ? Math.floor((result.total - 1) / PAGE_SIZE) * PAGE_SIZE : 0;
+    await refreshFlows();
+    return;
+  }
+  const query = `${session}?${parameters}`;
+  const changed = state.rowsQuery !== query || state.total !== result.total || JSON.stringify(state.rows) !== JSON.stringify(result.items);
+  state.rowsQuery = query;
   state.rows = result.items;
   state.total = result.total;
   // 新批次可能先于第一条记录返回；收到记录后只自动打开一次。
@@ -503,7 +561,7 @@ async function refreshFlows() {
     if (following.full)
       await requestViewer.open(session, state.activeId, "response");
   }
-  renderRows();
+  if (changed) renderRows();
   scheduleDirectories();
   const active = state.rows.find((flow) => flow.id === state.activeId);
   const version = active ? JSON.stringify(active) : null;
@@ -512,6 +570,17 @@ async function refreshFlows() {
 }
 
 /** 使用 DOM 文本节点渲染流量，抓包内容不会被当成 HTML 执行。 */
+/** 列表突出接口路径及 Query；CONNECT 记录没有 HTTP 接口路径。 */
+function requestAddress(flow) {
+  if (flow.method === "CONNECT") return flow.host || flow.url || "—";
+  try {
+    const url = new URL(flow.url);
+    return url.pathname === "/" && !url.search ? url.host : url.pathname + url.search;
+  } catch {
+    return flow.url || "—";
+  }
+}
+
 function renderRows() {
   const previous = state.rowElements || new Map();
   const next = new Map();
@@ -556,17 +625,25 @@ function renderRows() {
     const url = document.createElement("td");
     url.className = "url-cell";
     url.title = flow.url;
-    const host = document.createElement("strong");
-    host.textContent = flow.host;
-    const path = document.createElement("small");
+    const address = document.createElement("div");
+    address.className = "request-interface";
+    address.textContent = requestAddress(flow);
+    url.append(address);
     try {
-      const value = new URL(flow.url);
-      path.textContent = value.href;
-    } catch {
-      path.textContent = flow.url;
-    }
-    url.append(host, path);
+      const parsed = new URL(flow.url);
+      if (flow.method !== "CONNECT" && (parsed.pathname !== "/" || parsed.search)) {
+        const host = document.createElement("small");
+        host.className = "request-host muted";
+        host.textContent = parsed.host;
+        url.append(host);
+      }
+    } catch { /* 无法解析时保留原地址，不猜测接口或域名。 */ }
     row.append(url);
+    const timeCell = document.createElement("td");
+    const timestamp = flow.started == null ? null : new Date(flow.started * 1000);
+    timeCell.textContent = timestamp ? timestamp.toLocaleTimeString("zh-CN", { hour12: false }) + "." + String(timestamp.getMilliseconds()).padStart(3, "0") : "—";
+    timeCell.title = timestamp ? timestamp.toLocaleString("zh-CN", { hour12: false }) : "未知请求时间";
+    row.append(timeCell);
     for (const value of [
       flow.duration == null ? "—" : `${Math.round(flow.duration)} ms`,
       size(flow.size),
@@ -631,7 +708,7 @@ function renderRows() {
   state.rowElements = next;
   $("empty").style.display = state.rows.length ? "none" : "block";
   const hasFilters =
-    $("search").value.trim() ||
+    activeKeyword().search ||
     Object.keys(filterFields).some((id) => $(id).value.trim());
   $("empty").querySelector("h2").textContent = hasFilters
     ? "没有匹配的记录"
@@ -662,8 +739,8 @@ function renderSelection() {
   const busy =
     state.session === state.status?.session_id ||
     state.status?.replay_jobs?.includes(state.session);
-  $("deleteSelected").disabled = !state.selected.size || busy;
-  $("clearSession").disabled = !state.session || busy;
+  $("deleteSelected").disabled = !state.selected.size;
+  $("clearSession").disabled = !state.session;
   $("deleteSession").disabled = !state.session || busy;
   $("selectionCount").textContent = `已选择 ${state.selected.size} 条`;
   $("toolbarSelectionCount").hidden = !state.selected.size;
@@ -676,6 +753,7 @@ function renderSelection() {
   $("repeat").disabled = !state.selected.size;
   $("export").disabled = !state.selected.size;
   $("editRepeat").disabled = state.selected.size !== 1;
+  $("compareSelected").disabled = state.selected.size !== 2;
 }
 
 /** 删除后清理详情与选择，再从服务端重新读取计数和目录。 */
@@ -737,19 +815,19 @@ $("clearSession").onclick = action(() => removeFlows(true));
 /** 按需读取详情；快速切换请求时丢弃旧请求的迟到结果。 */
 async function loadDetail(id) {
   const session = state.session;
+  const requestedVersion = JSON.stringify(state.rows.find((flow) => flow.id === id));
   const detail = await json(
     `/api/sessions/${session}/flows/${id}?preview=true`,
   );
   if (session === state.session && id === state.activeId) {
     state.detail = detail;
-    state.detailVersion = JSON.stringify(
-      state.rows.find((flow) => flow.id === id),
-    );
+    state.detailVersion = requestedVersion;
     renderDetail();
     await requestViewer.refresh(session, id);
   }
 }
 /** 未选中请求时不占用列表空间，仅首次展开播放动画。 */
+const detailWebSocketViewer = new WebSocketViewer($("detailWebSocket"));
 function renderDetail() {
   const panel = $("detailPanel");
   if (!state.activeId) {
@@ -766,6 +844,14 @@ function renderDetail() {
       { opacity: 1, transform: "translateX(0)" },
     ]);
   const flow = state.detail;
+  flowComparison.updateMenus();
+  document.querySelector('[data-tab="websocket"]').hidden = !flow?.websocket;
+  if (state.tab === "websocket" && !flow?.websocket) state.tab = "response";
+  document.querySelectorAll("[data-tab]").forEach(button => {
+    const active = button.dataset.tab === state.tab;
+    button.classList.toggle("active", active); button.setAttribute("aria-pressed", String(active));
+  });
+  $("detailWebSocket").hidden = state.tab !== "websocket";
   renderDomainActions();
   $("detailSummary").textContent = flow
     ? `${flow.method} ${flow.url}\n${statusNames[flow.status] || flow.status} · ${flow.source === "replay" ? "重放" : "抓包"}${flow.reason ? " · " + flow.reason : ""}`
@@ -782,9 +868,14 @@ function renderDetail() {
   $("detailQueryToggle").textContent = queryOutput.hidden ? "查看 Query JSON" : "收起 Query JSON";
   const message = flow?.[state.tab];
   $("detailReplay").disabled =
-    !flow?.request || flow.request.truncated || flow.status === "pending";
+    !flow?.request || !!flow.websocket || flow.request.truncated || flow.status === "pending";
   $("detailEditReplay").disabled = $("detailReplay").disabled;
-  if (state.tab === "info") {
+  $("detailConnectionInfo").hidden = state.tab !== "info";
+  $("detailBodySection").hidden = ["info", "websocket"].includes(state.tab);
+  if (state.tab === "websocket") {
+    detailWebSocketViewer.show(state.session, flow.id);
+  } else if (state.tab === "info") {
+    renderConnectionInfo($("detailConnectionInfo"), flow);
     const info = flow
       ? Object.fromEntries(
           Object.entries(flow).filter(
@@ -793,6 +884,7 @@ function renderDetail() {
           ),
         )
       : {};
+    $("detailBodyTitle").textContent = "连接信息";
     $("detailContent").textContent = JSON.stringify(info, null, 2);
   } else {
     const response = state.tab === "response";
@@ -802,8 +894,8 @@ function renderDetail() {
     renderMessageHeaders($("detailHeaders"), message);
     $("detailCopyHeaders").disabled = !message;
     $("detailCopyBody").disabled = !message;
-    const notice = [];
-    if (message?.truncated) notice.push("正文被截断或未采集，不能直接重放。");
+    const notice = [bodyCaptureNotice(message)].filter(Boolean);
+    if (!message?.body_state && message?.truncated) notice.push("正文被截断或未采集，不能直接重放。");
     if (message?.display_truncated)
       notice.push("正文仅预览前 64 KiB，请点击完整查看。");
     if (message?.decode_error) notice.push("正文解码失败，以下为文本预览。");
@@ -822,11 +914,18 @@ function renderDetail() {
     if (decodedBody.changed && !message?.truncated)
       notice.push("请求正文已执行 URL 解码，完整原始内容可在“完整查看”中切换查看。");
     $("detailNotice").textContent = notice.join(" ");
+    const sse = state.tab === "response" && isEventStream(message);
+    $("detailEvents").hidden = !sse;
+    $("detailContent").hidden = sse;
+    if (sse) renderSseEvents($("detailEvents"), message?.body_text || "");
+    else $("detailEvents").replaceChildren();
+    setBodyDownload($("detailDownloadBody"), state.session, flow?.id, state.tab, message);
   }
-  $("detailMessage").hidden = state.tab === "info";
+  $("detailMessage").hidden = ["info", "websocket"].includes(state.tab);
 }
 /** 清除当前详情，迟到的读取结果会由 loadDetail 的当前请求校验丢弃。 */
 function hideRequestDetail() {
+  detailWebSocketViewer.reset();
   state.activeId = null;
   state.detail = null;
   state.detailVersion = null;
@@ -866,7 +965,11 @@ let refreshing = false,
   refreshDue = 0;
 function scheduleRefresh(event = { type: "connected" }) {
   if (event.type === "flows") {
-    if (event.session_id === state.session) dirty.flows = true;
+    if (event.session_id === state.session) {
+      dirty.flows = true;
+      // 落盘完成时字节总数可能不变，仍需更新正文与完整状态。
+      if (event.flow_id && event.flow_id === state.activeId) state.detailVersion = null;
+    }
     dirty.sessions = true;
   } else if (event.type === "status") dirty.status = true;
   else if (event.type === "sessions") {
@@ -998,7 +1101,7 @@ $("refreshSessions").onclick = action(async () => {
 });
 /** 工具栏分别显示普通筛选与分组筛选的选中状态。 */
 function syncFilterControls() {
-  const quickCount = Object.keys(filterFields).filter((id) => $(id).value.trim()).length;
+  const quickCount = ["filterKeyword", ...Object.keys(filterFields)].filter((id) => $(id).value.trim()).length;
   const advancedCount = state.advancedExpression
     ? countAdvancedConditions(state.advancedExpression) : 0;
   $("toggleFilters").textContent = quickCount ? `筛选 (${quickCount})` : "筛选";
@@ -1035,12 +1138,24 @@ function filtersChanged() {
   clearTimeout($("search").timer);
   $("search").timer = setTimeout(action(refreshFlows), 250);
 }
-$("search").oninput = filtersChanged;
-$("searchScope").onchange = filtersChanged;
+/** 面板条件接管查询时清除外层关键词，避免隐藏的条件叠加。 */
+function innerFiltersChanged() {
+  $("search").value = "";
+  $("quickSearchScope").value = "url";
+  filtersChanged();
+}
+function outerFiltersChanged() {
+  $("filterKeyword").value = "";
+  filtersChanged();
+}
+$("search").oninput = outerFiltersChanged;
+$("quickSearchScope").onchange = outerFiltersChanged;
+$("filterKeyword").oninput = innerFiltersChanged;
+$("searchScope").onchange = innerFiltersChanged;
 for (const id of Object.keys(filterFields))
   $(id).addEventListener(
     $(id).tagName === "SELECT" ? "change" : "input",
-    filtersChanged,
+    innerFiltersChanged,
   );
 /** 筛选浮层只做位移和透明度动画，不逐帧改变布局高度。 */
 function hideFilters() {
@@ -1087,6 +1202,8 @@ $("resetFilters").onclick = () => {
   state.directorySignature = null;
   scheduleDirectories();
   $("search").value = "";
+  $("filterKeyword").value = "";
+  $("quickSearchScope").value = "url";
   $("searchScope").value = "url";
   for (const id of Object.keys(filterFields)) $(id).value = "";
   filtersChanged();
@@ -1160,14 +1277,21 @@ $("detailReplay").onclick = action(() =>
 $("detailEditReplay").onclick = action(() =>
   editReplay(state.session, state.activeId),
 );
-$("viewerReplay").onclick = action(() =>
-  replayOne(requestViewer.session, requestViewer.id, true),
-);
+$("viewerReplay").onclick = action(async () => {
+  const session = requestViewer.session, id = requestViewer.id;
+  const url = viewerRequestUrl();
+  const flow = await json(`/api/sessions/${session}/flows/${id}`);
+  if (!flow.request || flow.request.truncated) throw new Error("请求正文不完整，不能重放");
+  await submitReplay({ids: [id], count: 1, interval: 0, edit: {
+    url, method: flow.request.method, headers: flow.request.headers, body_b64: flow.request.body_b64 || "",
+  }}, session, true);
+});
 $("viewerEditReplay").onclick = action(async () => {
   const session = requestViewer.session,
     id = requestViewer.id;
+  const url = viewerRequestUrl();
   $("requestViewer").close();
-  await editReplay(session, id, true);
+  await editReplay(session, id, true, url);
 });
 $("export").onclick = action(async () => {
   const format = $("exportFormat").value;
@@ -1188,6 +1312,7 @@ $("showCapture").onclick = action(async () => {
     (session) => session.kind === "capture",
   );
   const latest =
+    captures.find((session) => session.id === state.lastCaptureSession) ||
     captures.find((session) => session.id === state.status?.session_id) ||
     captures[0];
   $("replayMenu").open = false;
@@ -1206,6 +1331,13 @@ $("openSettings").onclick = action(async () => {
     ["upstreamProxy", "upstream_proxy"],
   ])
     $(id).value = settings[key];
+  $("bodyCacheLimit").value = (settings.body_limit || 2097152) / 1024;
+  const streamSupported = settings.save_streamed_bodies !== undefined;
+  $("streamCaptureCompatibility").hidden = streamSupported;
+  $("saveStreamBodies").disabled = !streamSupported;
+  $("streamBodyLimit").disabled = !streamSupported;
+  $("saveStreamBodies").checked = settings.save_streamed_bodies !== false;
+  $("streamBodyLimit").value = (settings.stream_body_limit || 67108864) / 1048576;
   $("tlsDomains").value = settings.tls_domains.join("\n");
   $("blockedDomains").value = settings.blocked_domains.join("\n");
   $("blockingEnabled").checked = settings.blocking_enabled;
@@ -1398,6 +1530,9 @@ $("settingsForm").onsubmit = action(async (event) => {
     blocking_enabled: $("blockingEnabled").checked,
     hook_enabled: $("hookEnabled").checked,
     request_hooks: state.hookEntries,
+    body_limit: Number($("bodyCacheLimit").value) * 1024,
+    save_streamed_bodies: $("saveStreamBodies").checked,
+    stream_body_limit: Number($("streamBodyLimit").value) * 1048576,
   };
   await json("/api/settings", {
     method: "PUT",
@@ -1448,8 +1583,9 @@ async function addDomain(block) {
 }
 $("addDecrypt").onclick = action(() => addDomain(false));
 $("addBlock").onclick = action(() => addDomain(true));
+const replayEditor = new ReplayEditor();
 /** 编辑器保存来源会话，防止编辑期间切换列表后重放了错误批次。 */
-async function editReplay(session, id, full = false) {
+async function editReplay(session, id, full = false, urlOverride = null) {
   const flow = await json(`/api/sessions/${session}/flows/${id}`);
   const request = flow.request;
   if (!request) throw new Error("连接记录无法编辑重放");
@@ -1458,20 +1594,13 @@ async function editReplay(session, id, full = false) {
   $("editDialog").sourceSession = session;
   $("editDialog").fullReplay = full;
   $("editMethod").value = request.method;
-  $("editUrl").value = request.url;
-  $("editHeaders").value = JSON.stringify(request.headers, null, 2);
-  $("editBodyFormat").value = "base64";
-  $("editBody").value = request.body_b64;
+  $("editUrl").value = urlOverride || request.url;
+  replayEditor.open(request);
   $("editDialog").showModal();
 }
 $("editRepeat").onclick = action(() =>
   editReplay(state.session, [...state.selected][0]),
 );
-$("editBodyFormat").onchange = () => {
-  const request = $("editDialog").flow.request;
-  $("editBody").value =
-    $("editBodyFormat").value === "text" ? request.body_text : request.body_b64;
-};
 function encodeText(text) {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
@@ -1480,22 +1609,10 @@ function encodeText(text) {
 }
 $("editForm").onsubmit = action(async (event) => {
   event.preventDefault();
-  let headers = JSON.parse($("editHeaders").value);
-  const text = $("editBodyFormat").value === "text";
-  if (text)
-    headers = headers.filter(
-      ([key]) =>
-        !["content-encoding", "content-length"].includes(key.toLowerCase()),
-    );
   const options = {
     ...replayOptions(),
     ids: [$("editDialog").flow.id],
-    edit: {
-      url: $("editUrl").value,
-      method: $("editMethod").value,
-      headers,
-      body_b64: text ? encodeText($("editBody").value) : $("editBody").value,
-    },
+    edit: replayEditor.build(),
   };
   await submitReplay(
     options,
@@ -1505,10 +1622,11 @@ $("editForm").onsubmit = action(async (event) => {
   await closeDialog("editDialog");
 });
 action(async () => {
+  // 首次 API 失败也保留实时连接，后端恢复后可自动重新读取。
+  connectLive();
   await refreshStatus();
   await refreshSessions();
   await refreshFlows();
-  connectLive();
 })();
 
 /** 记住详情中的文本选区，点击分析按钮时不会因焦点切换丢失。 */
@@ -1638,7 +1756,8 @@ const advancedFields = [
   ["host", "域名"], ["url", "URL"], ["method", "方法"],
   ["status_code", "状态码"], ["status", "记录状态"], ["source", "来源"],
   ["content_type", "响应类型"], ["request_header", "请求头"],
-  ["response_header", "响应头"], ["reason", "错误信息"],
+  ["response_header", "响应头"], ["request_body", "请求正文"],
+  ["response_body", "响应正文"], ["reason", "错误信息"],
   ["duration", "耗时 ms"], ["size", "响应大小 B"],
 ];
 const advancedOperators = {
@@ -1651,6 +1770,8 @@ const advancedOperators = {
   content_type: [["contains", "包含"], ["not_contains", "不包含"]],
   request_header: [["contains", "包含"], ["not_contains", "不包含"]],
   response_header: [["contains", "包含"], ["not_contains", "不包含"]],
+  request_body: [["contains", "包含"], ["not_contains", "不包含"]],
+  response_body: [["contains", "包含"], ["not_contains", "不包含"]],
   reason: [["contains", "包含"], ["not_contains", "不包含"]],
   duration: [["gte", "不少于"], ["lte", "不多于"]],
   size: [["gte", "不少于"], ["lte", "不多于"]],
@@ -1675,21 +1796,23 @@ function countAdvancedGroups(node) {
   return node.children ? 1 + node.children.reduce((count, child) => count + countAdvancedGroups(child), 0) : 0;
 }
 function setQuickFilterDisabled(disabled) {
-  for (const id of ["search", "searchScope", ...Object.keys(filterFields)])
+  for (const id of ["search", "quickSearchScope", "filterKeyword", "searchScope", ...Object.keys(filterFields)])
     $(id).disabled = disabled;
   $("search").placeholder = disabled ? "高级筛选已启用，点击右侧编辑" : "搜索关键词…";
   $("filterHelpText").textContent = disabled
     ? "高级筛选已启用；编辑分组或重置全部筛选后可使用快捷条件。"
-    : "条件之间为“同时满足”；关键词忽略大小写，不搜索正文。";
+    : "条件之间为“同时满足”；关键词忽略大小写；正文按已保存内容搜索，最多解压 16 MiB。";
 }
 function importQuickFilters() {
   const children = [];
-  const search = $("search").value.trim();
+  const { search, scope } = activeKeyword();
   if (search) {
-    const scope = $("searchScope").value;
     const fields = scope === "url" ? ["url"] : scope === "headers"
       ? ["request_header", "response_header"]
-      : ["url", "request_header", "response_header", "reason"];
+      : scope === "request_body" ? ["request_body"]
+      : scope === "response_body" ? ["response_body"]
+      : scope === "bodies" ? ["request_body", "response_body"]
+      : ["host", "url", "request_header", "response_header", "request_body", "response_body", "reason"];
     const parts = fields.map((field) => advancedCondition(field, "contains", search));
     children.push(parts.length === 1 ? parts[0] : advancedGroup("or", parts));
   }
@@ -1870,9 +1993,130 @@ $("applyAdvancedFilters").onclick = action(async () => {
   }
   state.advancedExpression = draft.children.length ? structuredClone(draft) : null;
   $("search").value = "";
+  $("filterKeyword").value = "";
+  $("quickSearchScope").value = "url";
   $("searchScope").value = "url";
   for (const id of Object.keys(filterFields)) $(id).value = "";
   setQuickFilterDisabled(Boolean(state.advancedExpression));
   await closeDialog("advancedFilterDialog");
   filtersChanged();
 });
+
+/** 表头排序在服务端执行，实时刷新和翻页沿用用户选择。 */
+for (const [id, field] of [
+  ["sortStarted", "started"],
+  ["sortSize", "size"],
+]) {
+  $(id).onclick = action(async () => {
+    state.sortOrder = state.sortBy !== field || state.sortOrder === "none" ? "asc" : state.sortOrder === "asc" ? "desc" : "none";
+    state.sortBy = field;
+    state.offset = 0;
+    for (const [button, key, title, cell] of [
+      ["sortStarted", "started", "请求时间", "timeSortHeader"],
+      ["sortSize", "size", "大小", "sizeSortHeader"],
+    ]) {
+      const active = state.sortBy === key && state.sortOrder !== "none";
+      $(button).textContent = `${title} ${active ? state.sortOrder === "asc" ? "↑" : "↓" : "↕"}`;
+      $(button).classList.toggle("active", active);
+      $(cell).setAttribute("aria-sort", active ? state.sortOrder === "asc" ? "ascending" : "descending" : "none");
+    }
+    await refreshFlows();
+  });
+}
+
+/** 详情代码框只处理当前请求，手动复制且不下载文件。 */
+async function exportDetail(session, id, format, urlOverride = null) {
+  if (!session || !id) throw new Error("请先选择请求");
+  const response = await api(`/api/sessions/${session}/export`, {
+    method: "POST", body: JSON.stringify({ids: [id], format, ...(urlOverride ? {request_url: urlOverride} : {})}),
+  });
+  if (urlOverride && response.headers.get("X-Capture-URL-Override") !== "applied") {
+    throw new Error("当前后端尚未支持修改导出 URL，请重启后端后再生成代码");
+  }
+  $("curlCopyTitle").textContent = format === "curl" ? "cURL 命令" : "Python requests 代码";
+  $("curlCopyText").value = (await response.text()).trim();
+  $("curlCopyDialog").showModal();
+  $("curlCopyText").focus();
+  $("curlCopyText").select();
+}
+for (const prefix of ["detail", "viewer"]) {
+  for (const [suffix, format] of [["Curl", "curl"], ["Requests", "requests"]]) {
+    $(prefix + "Export" + suffix).onclick = action(async () => {
+      const menu = $(prefix + "Export" + suffix).closest("details");
+      menu.querySelectorAll("button").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.id === prefix + "Export" + suffix));
+      });
+      menu.open = false;
+      await exportDetail(prefix === "viewer" ? requestViewer.session : state.session,
+        prefix === "viewer" ? requestViewer.id : state.activeId, format,
+        prefix === "viewer" && viewerRequestUrl() !== requestViewer.flow?.request?.url
+          ? viewerRequestUrl() : null);
+    });
+  }
+}
+
+/** 各报文区域独立调节高度，拖动期间不触发文本选择。 */
+for (const area of document.querySelectorAll(
+  "#detailHeaders, #detailContent, #detailQueryJson, #viewerHeaders, #viewerBodyArea, #viewerQueryJson"
+)) {
+  area.classList.add("vertical-area");
+  const minimum = 64;
+  const handle = document.createElement("div");
+  handle.className = "vertical-area-handle";
+  handle.setAttribute("role", "separator");
+  handle.setAttribute("aria-label", "上下拖动调整区域高度");
+  handle.title = "上下拖动调整区域高度";
+  area.after(handle);
+  handle.onpointerdown = event => {
+    if (event.button !== 0 || event.isPrimary === false) return;
+    event.preventDefault();
+    const start = event.clientY, height = area.getBoundingClientRect().height;
+    handle.setPointerCapture(event.pointerId);
+    handle.onpointermove = move => {
+      if (move.pointerId !== event.pointerId) return;
+      area.style.height = `${Math.max(minimum, Math.min(1600, height + move.clientY - start))}px`;
+      area.style.maxHeight = "none";
+    };
+    const end = () => {
+      handle.onpointermove = null;
+      handle.onpointerup = null;
+      handle.onpointercancel = null;
+      handle.onlostpointercapture = null;
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    };
+    handle.onpointerup = end;
+    handle.onpointercancel = end;
+    handle.onlostpointercapture = end;
+  };
+}
+
+// 请求代码弹窗只展示内容，复制由用户执行。
+$("selectCurlText").onclick = () => { $("curlCopyText").focus(); $("curlCopyText").select(); };
+$("closeCurlCopy").onclick = $("doneCurlCopy").onclick = () => $("curlCopyDialog").close();
+$("curlCopyDialog").addEventListener("close", () => { $("curlCopyText").value = ""; });
+
+// 正文工具操作不应触发所在 summary 的折叠。
+for (const id of ["detailCopyBody", "viewerMode", "viewerCopy", "viewerCollapse"]) {
+  $(id).addEventListener("click", event => event.stopPropagation());
+}
+
+/** 校验详情中的 URL 草稿；仅影响后续操作，不修改已保存抓包。 */
+function viewerRequestUrl() {
+  const value = $("viewerUrl").value.trim();
+  let url;
+  try { url = new URL(value); } catch { throw new Error("请输入完整的 HTTP/HTTPS URL"); }
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("只支持 HTTP/HTTPS URL");
+  return value;
+}
+
+// App 通过原生桥接打开外部爬虫工具；浏览器启动保留普通新标签行为。
+for (const link of document.querySelectorAll('a[href="https://spidertools.cn/#/"]')) {
+  link.addEventListener("click", event => {
+    const open = window.pywebview?.api?.open_external_tool;
+    if (!open) return;
+    event.preventDefault();
+    action(async () => {
+      if (!await open(link.href)) throw new Error("系统浏览器未能打开，可手动访问 https://spidertools.cn/#/");
+    })();
+  });
+}

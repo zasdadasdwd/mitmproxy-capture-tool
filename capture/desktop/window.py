@@ -5,7 +5,9 @@ import logging
 import subprocess
 import sys
 import time
+import webbrowser
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -84,6 +86,22 @@ class DesktopBackend:
                 self.log.close()
 
 
+class DesktopLinks:
+    """仅将受支持的外部工具交给系统浏览器，控制台继续留在 App。"""
+
+    def open_external_tool(self, url):
+        """限定工具站点，避免 WebView 的桥接接口成为任意网址启动入口。"""
+        target = urlsplit(url)
+        if (
+            target.scheme != "https"
+            or target.hostname != "spidertools.cn"
+            or target.username
+            or target.password
+        ):
+            raise ValueError("不支持的外部工具地址")
+        return webbrowser.open(url, new=2)
+
+
 def set_app_identity():
     """WebKit 初始化后设置 Dock 名称与图标，不改变任何系统代理。"""
     import AppKit
@@ -127,6 +145,7 @@ def main():
             height=900,
             min_size=(720, 480),
             text_select=True,
+            js_api=DesktopLinks(),
         )
         window.events.loaded += lambda: print("天机阁窗口页面已加载", flush=True)
         webview.start(set_app_identity, gui="cocoa", debug=False)

@@ -15,9 +15,20 @@ class FilterCondition(BaseModel):
     """单个字段比较；字段和操作符都只能从白名单选择。"""
 
     field: Literal[
-        "host", "url", "method", "status_code", "status", "source",
-        "content_type", "request_header", "response_header", "reason",
-        "duration", "size",
+        "host",
+        "url",
+        "method",
+        "status_code",
+        "status",
+        "source",
+        "content_type",
+        "request_header",
+        "response_header",
+        "request_body",
+        "response_body",
+        "reason",
+        "duration",
+        "size",
     ]
     operator: Literal["eq", "neq", "contains", "not_contains", "gte", "lte"]
     value: str = Field(min_length=1, max_length=500)
@@ -34,6 +45,8 @@ class FilterCondition(BaseModel):
             "content_type": {"contains", "not_contains"},
             "request_header": {"contains", "not_contains"},
             "response_header": {"contains", "not_contains"},
+            "request_body": {"contains", "not_contains"},
+            "response_body": {"contains", "not_contains"},
             "reason": {"contains", "not_contains"},
             "duration": {"gte", "lte"},
             "size": {"gte", "lte"},
@@ -67,7 +80,13 @@ class FilterCondition(BaseModel):
             if not self.value.isdecimal():
                 raise ValueError("大小必须是非负整数")
         elif self.field == "status" and self.value not in {
-            "pending", "receiving", "complete", "blocked", "passthrough", "error", "interrupted"
+            "pending",
+            "receiving",
+            "complete",
+            "blocked",
+            "passthrough",
+            "error",
+            "interrupted",
         }:
             raise ValueError("记录状态无效")
         elif self.field == "source" and self.value not in {"capture", "replay"}:
@@ -110,6 +129,10 @@ def compile_expression(group: FilterGroup) -> tuple[str, list]:
     def leaf(condition):
         field, op, value = condition.field, condition.operator, condition.value
         negative = op in {"neq", "not_contains"}
+        if field in {"request_body", "response_body"}:
+            section = "request" if field == "request_body" else "response"
+            sql = f"body_contains(json_extract(flows.detail, '$.{section}'), ?)"
+            return (f"NOT ({sql})" if negative else sql), [value]
         if field == "status_code":
             if "xx" in value:
                 start, end = int(value[0]) * 100, int(value[0]) * 100 + 99
@@ -118,12 +141,21 @@ def compile_expression(group: FilterGroup) -> tuple[str, list]:
             else:
                 start = end = int(value)
             sql = "flows.code BETWEEN ? AND ?"
-            return (f"flows.code IS NOT NULL AND NOT ({sql})" if negative else sql), [start, end]
+            return (f"flows.code IS NOT NULL AND NOT ({sql})" if negative else sql), [
+                start,
+                end,
+            ]
         if field in {"duration", "size"}:
             column = f"flows.{field}"
-            return f"{column} {'>=' if op == 'gte' else '<='} ?", [float(value) if field == "duration" else int(value)]
+            return f"{column} {'>=' if op == 'gte' else '<='} ?", [
+                float(value) if field == "duration" else int(value)
+            ]
         if field in {"request_header", "response_header", "content_type"}:
-            section = "response" if field in {"response_header", "content_type"} else "request"
+            section = (
+                "response"
+                if field in {"response_header", "content_type"}
+                else "request"
+            )
             headers = f"json_each(json_extract(flows.detail, '$.{section}.headers'))"
             if field == "content_type":
                 check = "lower(json_extract(h.value, '$[0]')) = 'content-type' AND instr(lower(json_extract(h.value, '$[1]')), lower(?)) > 0"
@@ -137,7 +169,11 @@ def compile_expression(group: FilterGroup) -> tuple[str, list]:
         elif field in {"host", "method", "status", "source"} and op in {"eq", "neq"}:
             sql, parameters = f"lower(flows.{field}) = lower(?)", [value]
         else:
-            column = "coalesce(json_extract(flows.detail, '$.reason'), '')" if field == "reason" else f"flows.{field}"
+            column = (
+                "coalesce(json_extract(flows.detail, '$.reason'), '')"
+                if field == "reason"
+                else f"flows.{field}"
+            )
             sql, parameters = f"instr(lower({column}), lower(?)) > 0", [value]
         return (f"NOT ({sql})" if negative else sql), parameters
 

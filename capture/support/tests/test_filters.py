@@ -200,7 +200,11 @@ def test_nested_and_or_groups_share_count_and_pages(tmp_path):
                 "operator": "and",
                 "children": [
                     {"field": "source", "operator": "eq", "value": "replay"},
-                    {"field": "response_header", "operator": "contains", "value": "X-Trace: Trace-123"},
+                    {
+                        "field": "response_header",
+                        "operator": "contains",
+                        "value": "X-Trace: Trace-123",
+                    },
                 ],
             },
         ],
@@ -216,15 +220,30 @@ def test_advanced_filter_validation_and_bound_values(tmp_path):
     """不接受空组、过深嵌套、未知字段或不匹配的操作符。"""
     store = Store(tmp_path / "captures")
     session = seed_flows(store)
-    expression = {"operator": "and", "children": [
-        {"field": "url", "operator": "contains", "value": "' OR 1=1 --"}
-    ]}
-    assert store.list_flows(session, filters=FlowFilters(expression=json.dumps(expression)))["total"] == 0
+    expression = {
+        "operator": "and",
+        "children": [{"field": "url", "operator": "contains", "value": "' OR 1=1 --"}],
+    }
+    assert (
+        store.list_flows(
+            session, filters=FlowFilters(expression=json.dumps(expression))
+        )["total"]
+        == 0
+    )
     invalid = [
         {"operator": "and", "children": []},
-        {"operator": "or", "children": [{"field": "unknown", "operator": "eq", "value": "x"}]},
-        {"operator": "and", "children": [{"field": "duration", "operator": "contains", "value": "1"}]},
-        {"operator": "and", "children": [{"field": "duration", "operator": "gte", "value": "nan"}]},
+        {
+            "operator": "or",
+            "children": [{"field": "unknown", "operator": "eq", "value": "x"}],
+        },
+        {
+            "operator": "and",
+            "children": [{"field": "duration", "operator": "contains", "value": "1"}],
+        },
+        {
+            "operator": "and",
+            "children": [{"field": "duration", "operator": "gte", "value": "nan"}],
+        },
     ]
     nested = {"field": "url", "operator": "contains", "value": "items"}
     for _ in range(5):
@@ -250,3 +269,31 @@ def test_invalid_filters(values):
     """无效条件明确报错，避免悄悄返回空列表或扩大匹配范围。"""
     with pytest.raises(ValidationError):
         FlowFilters(**values)
+
+
+def test_sorting_applies_before_pagination(tmp_path):
+    """大小排序应覆盖整个会话；取消排序恢复默认时间顺序。"""
+    store = Store(tmp_path)
+    session = seed_flows(store)
+    try:
+        ascending = store.list_flows(
+            session, filters=FlowFilters(sort_by="size", sort_order="asc", limit=2)
+        )
+        assert [row["id"] for row in ascending["items"]] == ["e", "d"]
+        descending = store.list_flows(
+            session,
+            filters=FlowFilters(sort_by="size", sort_order="desc", offset=1, limit=2),
+        )
+        assert [row["id"] for row in descending["items"]] == ["a", "b"]
+        oldest = store.list_flows(
+            session, filters=FlowFilters(sort_by="started", sort_order="asc", limit=2)
+        )
+        assert [row["id"] for row in oldest["items"]] == ["a", "b"]
+        default = store.list_flows(
+            session, filters=FlowFilters(sort_by="size", sort_order="none", limit=2)
+        )
+        assert [row["id"] for row in default["items"]] == ["e", "d"]
+        with pytest.raises(ValidationError):
+            FlowFilters(sort_by="size; DROP TABLE flows")
+    finally:
+        store.close()

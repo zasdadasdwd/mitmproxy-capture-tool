@@ -1,0 +1,4 @@
+interface:
+  display_name: "天机阁抓包分析"
+  short_description: "通过天机阁 MCP 检索请求、追踪参数来源、对比报文并验证重放结果"
+  default_prompt: "使用 $tianji-capture 查找目标接口，分析请求参数与响应来源，并说明证据和采集范围。"
