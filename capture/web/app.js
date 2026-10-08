@@ -26,8 +26,45 @@ const state = {
   refreshTimer: null,
   refreshSequence: 0,
   followReplay: null,
+  replayAnchor: null,
+  flowSessions: new Map(),
 };
 
+/** 聚合列表使用虚拟视图，所有单条操作仍路由到真实批次。 */
+const REPLAY_VIEW = "__replays__";
+function flowSession(id = state.activeId) {
+  return state.session === REPLAY_VIEW ? state.flowSessions.get(id) : state.session;
+}
+function flowListUrl(session, parameters) {
+  return session === REPLAY_VIEW ? `/api/replays/flows?${parameters}`
+    : `/api/sessions/${session}/flows?${parameters}`;
+}
+function selectedGroups(ids = [...state.selected]) {
+  const groups = new Map();
+  for (const id of ids) {
+    const session = flowSession(id);
+    if (!session) throw new Error("请求所属批次未知，请刷新后重试");
+    if (!groups.has(session)) groups.set(session, []);
+    groups.get(session).push(id);
+  }
+  return groups;
+}
+async function openReplayList(anchor = null) {
+  $("replayMenu").open = false;
+  switchSession(REPLAY_VIEW);
+  // 点击入口展示全部记录；返回抓包时仍恢复原筛选。
+  restoreFilters(null);
+  state.rows = [];
+  state.total = 0;
+  renderRows();
+  state.replayAnchor = anchor;
+  await refreshSessions();
+  try { await refreshFlows(); }
+  catch (error) {
+    if (error.message === "Not Found") throw new Error("重放聚合接口尚未生效，请停止抓包后重启工作台");
+    throw error;
+  }
+}
 /** 主题按钮描述下一步操作，主题在页面加载前恢复。 */
 function updateThemeButton() {
   const dark = document.documentElement.dataset.theme === "dark";
@@ -138,12 +175,12 @@ function action(fn) {
 }
 const flowComparison = new FlowComparison($("comparisonDialog"), scope => scope === "viewer"
   ? {session: requestViewer.session, id: requestViewer.id, flow: requestViewer.flow}
-  : {session: state.session, id: state.activeId, flow: state.detail}, toast);
+  : {session: flowSession(), id: state.activeId, flow: state.detail}, toast);
 $("compareSelected").onclick = action(async () => {
   if (!state.session || state.selected.size !== 2) return;
   const [left, right] = [...state.selected];
   $("flowActions").open = false;
-  await flowComparison.open({session: state.session, id: left}, {session: state.session, id: right});
+  await flowComparison.open({session: flowSession(left), id: left}, {session: flowSession(right), id: right});
 });
 function size(bytes) {
   return bytes >= 1048576
@@ -233,7 +270,7 @@ async function refreshSessions() {
     if (selected) state.sessions.push({ ...selected, archived: true });
   }
   if (
-    state.session &&
+    state.session && state.session !== REPLAY_VIEW &&
     !state.sessions.some((item) => item.id === state.session)
   )
     switchSession(null);
@@ -253,10 +290,12 @@ async function refreshSessions() {
       (session) => session.status === "running" && !session.archived,
     );
   $("replayRecords").replaceChildren();
-  $("replayCount").textContent = replays.length;
+  $("replayCount").textContent = replays.reduce((count, session) => count + (session.count || 0), 0);
+  $("replayCount").hidden = !replays.length;
+  $("showReplays").classList.toggle("active", state.session === REPLAY_VIEW);
   $("replayMenu").classList.toggle(
     "active",
-    state.sessions.some(
+    state.session === REPLAY_VIEW || state.sessions.some(
       (session) => session.id === state.session && session.kind === "replay",
     ),
   );
@@ -288,9 +327,7 @@ async function refreshSessions() {
     button.title = session.id;
     button.onclick = action(async () => {
       $("replayMenu").open = false;
-      switchSession(session.id);
-      await refreshSessions();
-      await refreshFlows();
+      await openReplayList({anchor_session: session.id});
     });
     const remove = document.createElement("button");
     remove.type = "button";
@@ -331,6 +368,8 @@ function switchSession(id) {
   state.refreshSequence++;
 
   state.followReplay = null;
+  state.replayAnchor = null;
+  state.flowSessions?.clear();
   if (state.sessions?.some(session => session.id === state.session && session.kind === "capture"))
     state.lastCaptureSession = state.session;
   state.session = id;
@@ -367,7 +406,7 @@ const filterFields = {
 
 /** 目录摘要最多每两秒刷新，查询所有分页中的 URL，不读取正文。 */
 function scheduleDirectories() {
-  if (!state.session || state.directoryTimer) return;
+  if (!state.session || state.session === REPLAY_VIEW || state.directoryTimer) return;
   state.directoryTimer = setTimeout(
     action(async () => {
       state.directoryTimer = null;
@@ -529,13 +568,36 @@ async function refreshFlows() {
   const parameters = filterParams();
   parameters.set("offset", state.offset);
   parameters.set("limit", PAGE_SIZE);
-  const result = await json(`/api/sessions/${session}/flows?${parameters}`);
+  const anchor = state.replayAnchor;
+  if (session === "__replays__" && anchor)
+    for (const [key, value] of Object.entries(anchor)) parameters.set(key, value);
+  const result = await json(session === "__replays__"
+    ? `/api/replays/flows?${parameters}` : `/api/sessions/${session}/flows?${parameters}`);
   if (
     sequence !== state.refreshSequence ||
     session !== state.session ||
     filters !== filterParams().toString()
   )
     return;
+  if (session === "__replays__") {
+    const keep = new Set([...state.selected, state.activeId, ...result.items.map(flow => flow.id)]);
+    for (const id of state.flowSessions.keys()) if (!keep.has(id)) state.flowSessions.delete(id);
+    for (const flow of result.items) state.flowSessions.set(flow.id, flow.session_id);
+    if (anchor && state.replayAnchor === anchor) {
+      state.replayAnchor = null;
+      if (result.anchor_offset != null) {
+        state.offset = Math.floor(result.anchor_offset / PAGE_SIZE) * PAGE_SIZE;
+        state.activeId = result.anchor_id;
+        state.flowSessions.set(result.anchor_id, result.anchor_session_id);
+        state.tab = "response";
+        state.scrollToReplay = true;
+        if (state.offset !== Number(parameters.get("offset"))) {
+          await refreshFlows();
+          return;
+        }
+      } else if (anchor.anchor_id || anchor.source_id) toast("未找到对应重放记录，已展示全部重放请求");
+    }
+  }
   // 删除末页记录后回到有效页；先通过查询序号校验，防止切换会话时跳页。
   if (state.offset > 0 && state.offset >= result.total) {
     state.offset = result.total ? Math.floor((result.total - 1) / PAGE_SIZE) * PAGE_SIZE : 0;
@@ -549,9 +611,9 @@ async function refreshFlows() {
   state.total = result.total;
   // 新批次可能先于第一条记录返回；收到记录后只自动打开一次。
   const following = state.followReplay;
-  if (following?.session === session && state.rows.length) {
+  if (following && (following.session === session || session === "__replays__") && state.rows.some(flow => session !== "__replays__" || flow.session_id === following.session)) {
     state.followReplay = null;
-    state.activeId = state.rows[0].id;
+    state.activeId = state.rows.find(flow => session !== "__replays__" || flow.session_id === following.session).id;
     state.tab = "response";
     document
       .querySelectorAll("[data-tab]")
@@ -559,9 +621,13 @@ async function refreshFlows() {
         button.classList.toggle("active", button.dataset.tab === state.tab),
       );
     if (following.full)
-      await requestViewer.open(session, state.activeId, "response");
+      await requestViewer.open(session === "__replays__" ? flowSession() : session, state.activeId, "response");
   }
   if (changed) renderRows();
+  if (state.scrollToReplay) {
+    state.scrollToReplay = false;
+    state.rowElements?.get(state.activeId)?.scrollIntoView({block: "center"});
+  }
   scheduleDirectories();
   const active = state.rows.find((flow) => flow.id === state.activeId);
   const version = active ? JSON.stringify(active) : null;
@@ -664,7 +730,7 @@ function renderRows() {
       event.stopPropagation();
       replayButton.disabled = true;
       try {
-        await replayOne(state.session, flow.id);
+        await replayOne(flowSession(flow.id), flow.id);
       } finally {
         replayButton.disabled =
           flow.method === "CONNECT" || flow.status === "pending";
@@ -714,7 +780,7 @@ function renderRows() {
     ? "没有匹配的记录"
     : "等待第一条请求";
   $("empty").querySelector("p").textContent = hasFilters
-    ? "请调整条件，或点击“重置全部筛选”。"
+    ? "请调整条件，或点击筛选面板中的“重置全部筛选”。"
     : "开始抓包并设置客户端代理。HTTPS 内容需要安装证书并开启目标域名解密。";
   $("total").textContent = `${state.total} 条记录`;
   $("pageInfo").textContent =
@@ -740,8 +806,10 @@ function renderSelection() {
     state.session === state.status?.session_id ||
     state.status?.replay_jobs?.includes(state.session);
   $("deleteSelected").disabled = !state.selected.size;
+  $("deleteSession").textContent = state.session === "__replays__" ? "删除所有重放批次" : "删除当前批次";
   $("clearSession").disabled = !state.session;
-  $("deleteSession").disabled = !state.session || busy;
+  $("clearDisplayed").disabled = !state.session || !state.total || Boolean(state.clearingDisplayed);
+  $("deleteSession").disabled = !state.session || busy || (state.session === "__replays__" && state.sessions.some(item => item.kind === "replay" && item.status === "running"));
   $("selectionCount").textContent = `已选择 ${state.selected.size} 条`;
   $("toolbarSelectionCount").hidden = !state.selected.size;
   $("toolbarSelectionCount").textContent = state.selected.size;
@@ -784,7 +852,7 @@ async function removeSessions(ids) {
   toast("批次已删除");
 }
 $("deleteSession").onclick = action(() =>
-  removeSessions(state.session ? [state.session] : []),
+  removeSessions(state.session === REPLAY_VIEW ? state.sessions.filter(item => item.kind === "replay").map(item => item.id) : state.session ? [state.session] : []),
 );
 $("clearReplays").onclick = action(() =>
   removeSessions(
@@ -799,27 +867,136 @@ async function removeFlows(all) {
   const ids = [...state.selected];
   if (!session || (!all && !ids.length)) return;
   const label = all
-    ? "这个批次的全部请求（包含筛选隐藏的记录）"
+    ? session === REPLAY_VIEW ? "所有重放批次的全部请求（包含筛选隐藏的记录）" : "这个批次的全部请求（包含筛选隐藏的记录）"
     : `选中的 ${ids.length} 条请求`;
   if (!confirm(`删除${label}及其正文？此操作无法恢复。`)) return;
-  const result = await json(`/api/sessions/${session}/flows/delete`, {
-    method: "POST",
-    body: JSON.stringify(all ? { all: true } : { ids }),
-  });
+  let result = {deleted: 0};
+  const groups = session === REPLAY_VIEW
+    ? all ? new Map(state.sessions.filter(item => item.kind === "replay").map(item => [item.id, []])) : selectedGroups(ids)
+    : new Map([[session, ids]]);
+  try {
+    for (const [target, targetIds] of groups) {
+      const deleted = await json(`/api/sessions/${target}/flows/delete`, {
+        method: "POST", body: JSON.stringify(all ? {all: true} : {ids: targetIds}),
+      });
+      result.deleted += deleted.deleted;
+    }
+  } catch (error) {
+    if (result.deleted) { await refreshAfterDeletion(); throw new Error(`已删除 ${result.deleted} 条，其余未完成：${error.message}`); }
+    throw error;
+  }
   await refreshAfterDeletion();
   toast(`已删除 ${result.deleted} 条请求`);
 }
 $("deleteSelected").onclick = action(() => removeFlows(false));
 $("clearSession").onclick = action(() => removeFlows(true));
 
+/** 清空当前查询的所有页，保持筛选；空结果不发起删除或刷新。 */
+async function clearDisplayedFlows() {
+  if (!state.session || !state.total || state.clearingDisplayed) return;
+  if (state.session === "__replays__") return clearReplayDisplayed();
+  const session = state.session;
+  const filters = filterParams().toString();
+  const parameters = new URLSearchParams(filters);
+  const filtered = [...parameters.keys()].some(key => !["sort_by", "sort_order", "scope"].includes(key));
+  state.clearingDisplayed = true;
+  renderSelection();
+  let deleted = 0;
+  try {
+    const ids = new Set();
+    if (filtered) {
+      // 按请求时间正序取快照，避免实时新记录插入列表顶部导致分页移位。
+      parameters.set("sort_by", "started");
+      parameters.set("sort_order", "asc");
+      parameters.set("limit", "500");
+      let total = null;
+      for (let offset = 0; total === null || offset < total; offset += 500) {
+        if (session !== state.session || filters !== filterParams().toString())
+          throw new Error("筛选或批次已变化，请重新点击清空");
+        parameters.set("offset", offset);
+        const page = await json(`/api/sessions/${session}/flows?${parameters}`);
+        if (total === null) total = page.total;
+        if (total > 50000) throw new Error("一次最多清空 50000 条筛选结果，请缩小筛选范围");
+        for (const flow of page.items) ids.add(flow.id);
+        if (!page.items.length) break;
+      }
+      if (!ids.size) return;
+    }
+    if (session !== state.session || filters !== filterParams().toString())
+      throw new Error("筛选或批次已变化，请重新点击清空");
+    const label = filtered ? `当前筛选匹配的 ${ids.size} 条请求（包含其他页）` : "当前批次的全部请求";
+    if (!confirm(`清空${label}及其正文？此操作无法恢复。筛选条件将保留。`)) return;
+    const snapshots = [...ids];
+    for (let offset = 0; !filtered || offset < snapshots.length; offset += 1000) {
+      const result = await json(`/api/sessions/${session}/flows/delete`, {
+        method: "POST",
+        body: JSON.stringify(filtered ? { ids: snapshots.slice(offset, offset + 1000) } : { all: true }),
+      });
+      deleted += result.deleted;
+      if (!filtered) break;
+    }
+    if (state.session === session) await refreshAfterDeletion();
+    toast(`已清空 ${deleted} 条请求，筛选条件已保留`);
+  } catch (error) {
+    if (deleted) {
+      if (state.session === session) await refreshAfterDeletion();
+      throw new Error(`已清空 ${deleted} 条请求，其余未完成：${error.message}`);
+    }
+    throw error;
+  } finally {
+    state.clearingDisplayed = false;
+    renderSelection();
+  }
+}
+$("clearDisplayed").onclick = action(clearDisplayedFlows);
+
+/** 聚合清空先固定匹配记录及真实批次，再逐批删除。 */
+async function clearReplayDisplayed() {
+  state.clearingDisplayed = true;
+  renderSelection();
+  const filters = filterParams().toString();
+  let deleted = 0;
+  try {
+    const groups = new Map();
+    for (let offset = 0; ; offset += 500) {
+      if (state.session !== REPLAY_VIEW || filters !== filterParams().toString()) throw new Error("筛选已变化，请重试");
+      const params = new URLSearchParams(filters);
+      params.set("limit", 500); params.set("offset", offset);
+      params.set("sort_by", "started"); params.set("sort_order", "asc");
+      const page = await json(flowListUrl(REPLAY_VIEW, params));
+      if (page.total > 50000) throw new Error("一次最多清空 50000 条，请缩小范围");
+      for (const flow of page.items) {
+        if (!groups.has(flow.session_id)) groups.set(flow.session_id, new Set());
+        groups.get(flow.session_id).add(flow.id);
+      }
+      if (offset + 500 >= page.total || !page.items.length) break;
+    }
+    const count = [...groups.values()].reduce((total, ids) => total + ids.size, 0);
+    if (!count || state.session !== REPLAY_VIEW || filters !== filterParams().toString()) return;
+    if (!confirm(`清空当前显示条件匹配的 ${count} 条重放请求（包含其他页）及正文？此操作无法恢复。`)) return;
+    for (const [session, values] of groups) {
+      const ids = [...values];
+      for (let offset = 0; offset < ids.length; offset += 1000) {
+        const result = await json(`/api/sessions/${session}/flows/delete`, {method: "POST", body: JSON.stringify({ids: ids.slice(offset, offset + 1000)})});
+        deleted += result.deleted;
+      }
+    }
+    if (state.session === REPLAY_VIEW) await refreshAfterDeletion();
+    toast(`已清空 ${deleted} 条重放请求`);
+  } catch (error) {
+    if (deleted) { if (state.session === REPLAY_VIEW) await refreshAfterDeletion(); throw new Error(`已删除 ${deleted} 条，其余未完成：${error.message}`); }
+    throw error;
+  } finally { state.clearingDisplayed = false; renderSelection(); }
+}
 /** 按需读取详情；快速切换请求时丢弃旧请求的迟到结果。 */
 async function loadDetail(id) {
-  const session = state.session;
+  const view = state.session;
+  const session = state.session === "__replays__" ? flowSession(id) : state.session;
   const requestedVersion = JSON.stringify(state.rows.find((flow) => flow.id === id));
   const detail = await json(
     `/api/sessions/${session}/flows/${id}?preview=true`,
   );
-  if (session === state.session && id === state.activeId) {
+  if (view === state.session && id === state.activeId && (view !== "__replays__" || session === flowSession(id))) {
     state.detail = detail;
     state.detailVersion = requestedVersion;
     renderDetail();
@@ -827,6 +1004,40 @@ async function loadDetail(id) {
   }
 }
 /** 未选中请求时不占用列表空间，仅首次展开播放动画。 */
+/** 只解释展示状态，不根据 UI 修改请求数据或重放行为。 */
+function detailPresentation(flow) {
+  if (!flow) return {method: "—", url: "正在加载请求详情…", label: "读取中", tone: "warning", reason: "", preferConnection: false};
+  const special = flow.method === "CONNECT" || flow.status === "blocked" ||
+    (["error", "interrupted"].includes(flow.status) && !flow.response);
+  const missingResponse = !flow.response && flow.method !== "CONNECT" && flow.status === "complete";
+  const tone = ["error", "blocked", "interrupted"].includes(flow.status) ? "danger"
+    : flow.status === "complete" && !missingResponse ? "success" : "warning";
+  return {
+    method: flow.method || "—", url: flow.url || flow.host || "—",
+    label: missingResponse ? "未保存响应" : `${flow.code ? flow.code + " · " : ""}${statusNames[flow.status] || flow.status || "状态未知"}`,
+    tone, preferConnection: special,
+    reason: flow.reason || (flow.status === "blocked" ? "请求已被域名策略阻止。" :
+      ["error", "interrupted"].includes(flow.status) ? "请求未完成，可切换连接查看已有信息。" :
+      missingResponse ? "此记录没有可查看的响应报文。" : ""),
+  };
+}
+const detailViewStates = new Map();
+function rememberDetailView(key, value) {
+  detailViewStates.set(key, value);
+  if (detailViewStates.size > 120) detailViewStates.delete(detailViewStates.keys().next().value);
+}
+/** 同一报文保留用户的折叠选择；没有选择时按实际内容自动展开。 */
+function setDetailSection(section, key, hasContent) {
+  section.dataset.viewKey = key;
+  section.open = detailViewStates.has(key) ? detailViewStates.get(key) : Boolean(hasContent);
+}
+for (const id of ["detailHeadersSection", "detailBodySection"]) {
+  const section = $(id);
+  section.querySelector("summary").addEventListener("click", event => {
+    if (event.target.closest("button, a, select")) return;
+    rememberDetailView(section.dataset.viewKey, !section.open);
+  });
+}
 const detailWebSocketViewer = new WebSocketViewer($("detailWebSocket"));
 function renderDetail() {
   const panel = $("detailPanel");
@@ -844,6 +1055,18 @@ function renderDetail() {
       { opacity: 1, transform: "translateX(0)" },
     ]);
   const flow = state.detail;
+  const contentKey = `${state.session}:${state.activeId}:${state.tab}`;
+  const previousContentKey = panel.dataset.contentKey;
+  if (previousContentKey && previousContentKey !== contentKey)
+    rememberDetailView(`scroll:${previousContentKey}`, panel.scrollTop);
+  const presentation = detailPresentation(flow);
+  const presentationKey = `${state.session}:${state.activeId}`;
+  if (flow && state.detailPresentationKey !== presentationKey) {
+    state.detailPresentationKey = presentationKey;
+    if (presentation.preferConnection) { state.tab = "info"; state.detailAutoTab = true; }
+    else if (state.detailAutoTab && state.tab === "info") { state.tab = "request"; state.detailAutoTab = false; }
+    $("detailSummary").querySelector(".detail-address").open = false;
+  }
   flowComparison.updateMenus();
   document.querySelector('[data-tab="websocket"]').hidden = !flow?.websocket;
   if (state.tab === "websocket" && !flow?.websocket) state.tab = "response";
@@ -853,9 +1076,16 @@ function renderDetail() {
   });
   $("detailWebSocket").hidden = state.tab !== "websocket";
   renderDomainActions();
-  $("detailSummary").textContent = flow
-    ? `${flow.method} ${flow.url}\n${statusNames[flow.status] || flow.status} · ${flow.source === "replay" ? "重放" : "抓包"}${flow.reason ? " · " + flow.reason : ""}`
-    : "正在加载请求详情…";
+  $("detailMethod").textContent = presentation.method;
+  $("detailUrl").textContent = presentation.url;
+  $("detailUrl").title = presentation.url;
+  $("detailFullUrl").textContent = presentation.url;
+  $("detailStatus").textContent = presentation.label;
+  $("detailStatus").dataset.tone = presentation.tone;
+  $("detailSource").textContent = flow ? (flow.source === "replay" ? "重放" : "抓包") : "";
+  $("detailReason").textContent = presentation.reason;
+  $("detailReason").hidden = !presentation.reason;
+  $("detailReason").dataset.tone = presentation.tone;
   const query = parseQueryParameters(flow?.[state.tab]?.url || flow?.url || "");
   const queryOutput = $("detailQueryJson");
   const queryKey = `${state.activeId}:${state.tab}`;
@@ -868,12 +1098,15 @@ function renderDetail() {
   $("detailQueryToggle").textContent = queryOutput.hidden ? "查看 Query JSON" : "收起 Query JSON";
   const message = flow?.[state.tab];
   $("detailReplay").disabled =
-    !flow?.request || !!flow.websocket || flow.request.truncated || flow.status === "pending";
+    !flow?.request || flow.method === "CONNECT" || !!flow.websocket || flow.request.truncated || flow.status === "pending";
   $("detailEditReplay").disabled = $("detailReplay").disabled;
+  const replayToggle = $("detailEditReplay").closest("details").querySelector("summary");
+  replayToggle.setAttribute("aria-disabled", String($("detailEditReplay").disabled));
+  replayToggle.title = $("detailEditReplay").disabled ? "当前报文不支持编辑重放" : "重放选项";
   $("detailConnectionInfo").hidden = state.tab !== "info";
   $("detailBodySection").hidden = ["info", "websocket"].includes(state.tab);
   if (state.tab === "websocket") {
-    detailWebSocketViewer.show(state.session, flow.id);
+    detailWebSocketViewer.show(flowSession(), flow.id);
   } else if (state.tab === "info") {
     renderConnectionInfo($("detailConnectionInfo"), flow);
     const info = flow
@@ -892,8 +1125,13 @@ function renderDetail() {
     $("detailBodyTitle").textContent = response ? "响应体" : "请求体";
     $("detailHeadersCount").textContent = `${message?.headers?.length || 0} 项`;
     renderMessageHeaders($("detailHeaders"), message);
-    $("detailCopyHeaders").disabled = !message;
-    $("detailCopyBody").disabled = !message;
+    $("detailCopyHeaders").disabled = !message?.headers?.length;
+    $("detailCopyBody").disabled = !message?.body_text;
+    setDetailSection($("detailHeadersSection"), `${queryKey}:headers`, message?.headers?.length);
+    const hasBody = Boolean(message?.body_text || message?.body_b64 || message?.body_size);
+    setDetailSection($("detailBodySection"), `${queryKey}:body`, hasBody);
+    $("detailBodyState").textContent = hasBody ? "" : message ? (bodyCaptureNotice(message) || "空正文") : "无报文";
+    $("detailBodyState").title = $("detailBodyState").textContent;
     const notice = [bodyCaptureNotice(message)].filter(Boolean);
     if (!message?.body_state && message?.truncated) notice.push("正文被截断或未采集，不能直接重放。");
     if (message?.display_truncated)
@@ -919,9 +1157,16 @@ function renderDetail() {
     $("detailContent").hidden = sse;
     if (sse) renderSseEvents($("detailEvents"), message?.body_text || "");
     else $("detailEvents").replaceChildren();
-    setBodyDownload($("detailDownloadBody"), state.session, flow?.id, state.tab, message);
+    setBodyDownload($("detailDownloadBody"), flowSession(), flow?.id, state.tab, message);
   }
   $("detailMessage").hidden = ["info", "websocket"].includes(state.tab);
+  const renderedKey = `${state.session}:${state.activeId}:${state.tab}`;
+  panel.dataset.contentKey = renderedKey;
+  if (previousContentKey !== renderedKey)
+    requestAnimationFrame(() => {
+      if (panel.dataset.contentKey === renderedKey)
+        panel.scrollTop = detailViewStates.get(`scroll:${renderedKey}`) || 0;
+    });
 }
 /** 清除当前详情，迟到的读取结果会由 loadDetail 的当前请求校验丢弃。 */
 function hideRequestDetail() {
@@ -955,7 +1200,7 @@ $("detailQueryCopy").onclick = () =>
 /** 完整报文按需读取，不受侧栏 64 KiB 预览限制。 */
 $("openFullRequest").onclick = action(async () => {
   if (!state.activeId) return;
-  await requestViewer.open(state.session, state.activeId);
+  await requestViewer.open(flowSession(), state.activeId);
 });
 
 /** 合并实时事件，不并发刷新；会话计数最多每两秒更新一次。 */
@@ -965,7 +1210,7 @@ let refreshing = false,
   refreshDue = 0;
 function scheduleRefresh(event = { type: "connected" }) {
   if (event.type === "flows") {
-    if (event.session_id === state.session) {
+    if (event.session_id === state.session || (state.session === REPLAY_VIEW && state.sessions.some(item => item.id === event.session_id && item.kind === "replay"))) {
       dirty.flows = true;
       // 落盘完成时字节总数可能不变，仍需更新正文与完整状态。
       if (event.flow_id && event.flow_id === state.activeId) state.detailVersion = null;
@@ -1067,7 +1312,8 @@ async function submitReplay(options, session = state.session, full = false) {
     method: "POST",
     body: JSON.stringify(options),
   });
-  switchSession(result.session_id);
+  await refreshSessions();
+  await openReplayList({anchor_session: result.session_id});
   state.advancedExpression = null;
   setQuickFilterDisabled(false);
   syncFilterControls();
@@ -1176,24 +1422,36 @@ $("toggleFilters").onclick = () => {
 $("flowActions").ontoggle = () => {
   if ($("flowActions").open) hideFilters();
 };
-document.addEventListener("pointerdown", (event) => {
-  if (!event.target.closest("#filterPanel, #toggleFilters")) hideFilters();
-  if (!event.target.closest("#flowActions")) $("flowActions").open = false;
-  if (!event.target.closest("#replayMenu")) $("replayMenu").open = false;
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !document.querySelector("dialog[open]")) {
-    if (
-      !$("filterPanel").hidden ||
-      $("flowActions").open ||
-      $("replayMenu").open
-    ) {
-      hideFilters();
-      $("flowActions").open = false;
-      $("replayMenu").open = false;
-    } else $("closeDetail").click();
+/** 只收起操作浮层；请求正文和 JSON 树的折叠状态不受影响。 */
+function dismissFloatingMenus(target = null) {
+  let dismissed = false;
+  if (
+    !$("filterPanel").hidden &&
+    !target?.closest?.("#filterPanel, #toggleFilters")
+  ) {
+    hideFilters();
+    dismissed = true;
   }
-});
+  for (const menu of document.querySelectorAll(
+    "#flowActions, #replayMenu, .detail-policy-actions, .detail-export-menu, .detail-replay-menu",
+  )) {
+    if (menu.open && !menu.contains(target)) {
+      menu.open = false;
+      dismissed = true;
+    }
+  }
+  return dismissed;
+}
+// 捕获阶段避免表格拖动等控件阻止冒泡；click 同时覆盖键盘触发。
+for (const type of ["pointerdown", "click"])
+  document.addEventListener(type, (event) => dismissFloatingMenus(event.target), true);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (dismissFloatingMenus()) {
+    event.preventDefault();
+    event.stopPropagation();
+  } else if (!document.querySelector("dialog[open]")) $("closeDetail").click();
+}, true);
 $("resetFilters").onclick = () => {
   state.advancedExpression = null;
   setQuickFilterDisabled(false);
@@ -1229,10 +1487,10 @@ $("selectFiltered").onclick = action(async () => {
     const parameters = new URLSearchParams(filters);
     parameters.set("offset", offset);
     parameters.set("limit", 500);
-    const result = await json(`/api/sessions/${session}/flows?${parameters}`);
+    const result = await json(flowListUrl(session, parameters));
     if (result.total > 1000)
       throw new Error("一次最多选择 1000 条，请缩小筛选范围");
-    ids.push(...result.items.map((flow) => flow.id));
+    for (const flow of result.items) { ids.push(flow.id); if (session === REPLAY_VIEW) state.flowSessions.set(flow.id, flow.session_id); }
     offset += 500;
     if (offset >= result.total) break;
   } while (true);
@@ -1255,6 +1513,7 @@ document.querySelectorAll("[data-tab]").forEach(
   (button) =>
     (button.onclick = () => {
       state.tab = button.dataset.tab;
+      state.detailAutoTab = false;
       document
         .querySelectorAll("[data-tab]")
         .forEach((b) => {
@@ -1270,12 +1529,15 @@ document
   .forEach(
     (button) => (button.onclick = () => closeDialog(button.dataset.close)),
   );
-$("repeat").onclick = action(() => submitReplay(replayOptions()));
+$("repeat").onclick = action(async () => {
+  const options = replayOptions(), groups = selectedGroups(options.ids);
+  for (const [session, ids] of groups) await submitReplay({...options, ids}, session);
+});
 $("detailReplay").onclick = action(() =>
-  replayOne(state.session, state.activeId),
+  replayOne(flowSession(), state.activeId),
 );
 $("detailEditReplay").onclick = action(() =>
-  editReplay(state.session, state.activeId),
+  editReplay(flowSession(), state.activeId),
 );
 $("viewerReplay").onclick = action(async () => {
   const session = requestViewer.session, id = requestViewer.id;
@@ -1295,16 +1557,24 @@ $("viewerEditReplay").onclick = action(async () => {
 });
 $("export").onclick = action(async () => {
   const format = $("exportFormat").value;
-  const response = await api(`/api/sessions/${state.session}/export`, {
+  for (const [session, ids] of selectedGroups()) {
+  const response = await api(`/api/sessions/${session}/export`, {
     method: "POST",
-    body: JSON.stringify({ ids: [...state.selected], format }),
+    body: JSON.stringify({ ids, format }),
   });
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url;
-  link.download = "capture." + ({ curl: "sh", python: "py", requests: "py" }[format] || format);
+  link.download = (state.session === REPLAY_VIEW ? `replay-${session}.` : "capture.") + ({ curl: "sh", python: "py", requests: "py" }[format] || format);
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+});
+$("showReplays").onclick = action(async () => {
+  const id = state.selected.size === 1 ? [...state.selected][0] : state.activeId;
+  const session = id ? flowSession(id) : null;
+  const replay = state.session === REPLAY_VIEW || state.sessions.some(item => item.id === session && item.kind === "replay");
+  await openReplayList(id && session ? replay ? {anchor_session: session, anchor_id: id} : {source_session: session, source_id: id} : null);
 });
 /** 顶部返回最近的抓包记录，重放记录单独在菜单里切换。 */
 $("showCapture").onclick = action(async () => {
@@ -1599,7 +1869,7 @@ async function editReplay(session, id, full = false, urlOverride = null) {
   $("editDialog").showModal();
 }
 $("editRepeat").onclick = action(() =>
-  editReplay(state.session, [...state.selected][0]),
+  editReplay(flowSession([...state.selected][0]), [...state.selected][0]),
 );
 function encodeText(text) {
   const bytes = new TextEncoder().encode(text);
@@ -1655,7 +1925,7 @@ document.addEventListener("selectionchange", () => {
   const value = selection.toString();
   if (!value.trim()) return;
   analysisSelection = {
-    session: viewer ? requestViewer.session : state.session,
+    session: viewer ? requestViewer.session : flowSession(),
     id: viewer ? requestViewer.id : state.activeId,
     part: viewer ? requestViewer.part : state.tab,
     value,
@@ -1668,6 +1938,24 @@ document.addEventListener("selectionchange", () => {
 
 /** 勾选优先，其次筛选；不加载请求正文，最多固定 2000 条目标请求。 */
 async function analysisRequestScope(session) {
+  if (state.session === REPLAY_VIEW) {
+    const ids = [...state.selected].filter(id => flowSession(id) === session);
+    if (ids.length) return {ids, label: `当前批次勾选的 ${ids.length} 条请求`};
+    const filters = filterParams();
+    if ([...filters.keys()].some(key => !["scope", "sort_by", "sort_order"].includes(key))) {
+      const params = new URLSearchParams(filters); params.set("limit", 500);
+      const ids = [];
+      for (let offset = 0; ; offset += 500) {
+        params.set("offset", offset);
+        const result = await json(`/api/sessions/${encodeURIComponent(session)}/flows?${params}`);
+        if (result.total > 2000) throw new Error("当前批次匹配结果超过 2000 条，请缩小范围");
+        ids.push(...result.items.map(item => item.id));
+        if (offset + 500 >= result.total) break;
+      }
+      return {ids, label: `当前批次筛选的 ${ids.length} 条请求`};
+    }
+    return {ids: null, label: "当前请求所属的重放批次"};
+  }
   if (session !== state.session) return { ids: null, label: "整个会话" };
   if (state.selected.size)
     return {
@@ -1745,7 +2033,7 @@ async function openDataLinks(session, id, part) {
   location.href = `/links.html?session=${encodeURIComponent(session)}&flow=${encodeURIComponent(id)}&handoff=${handoff}`;
 }
 $("detailLinks").onclick = action(() =>
-  openDataLinks(state.session, state.activeId, state.tab),
+  openDataLinks(flowSession(), state.activeId, state.tab),
 );
 $("viewerLinks").onclick = action(() =>
   openDataLinks(requestViewer.session, requestViewer.id, requestViewer.part),
@@ -1953,7 +2241,7 @@ function updateAdvancedPreview() {
       params.set("path_prefix", state.directory.path);
     }
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(state.session)}/flows?${params}`);
+      const response = await fetch(flowListUrl(state.session, params));
       const result = await response.json();
       if (sequence !== state.advancedPreviewSequence) return;
       $("advancedMatchCount").textContent = response.ok
@@ -1988,7 +2276,7 @@ $("applyAdvancedFilters").onclick = action(async () => {
     throw new Error("请填写所有条件");
   if (state.session && draft.children.length) {
     const params = new URLSearchParams({ expression: JSON.stringify(draft), limit: "1" });
-    const response = await fetch(`/api/sessions/${encodeURIComponent(state.session)}/flows?${params}`);
+    const response = await fetch(flowListUrl(state.session, params));
     if (!response.ok) throw new Error("筛选条件无效，请检查字段和值");
   }
   state.advancedExpression = draft.children.length ? structuredClone(draft) : null;
@@ -2043,11 +2331,11 @@ for (const prefix of ["detail", "viewer"]) {
   for (const [suffix, format] of [["Curl", "curl"], ["Requests", "requests"]]) {
     $(prefix + "Export" + suffix).onclick = action(async () => {
       const menu = $(prefix + "Export" + suffix).closest("details");
-      menu.querySelectorAll("button").forEach(button => {
+      menu.querySelectorAll("button[id*=\"Export\"]").forEach(button => {
         button.setAttribute("aria-pressed", String(button.id === prefix + "Export" + suffix));
       });
       menu.open = false;
-      await exportDetail(prefix === "viewer" ? requestViewer.session : state.session,
+      await exportDetail(prefix === "viewer" ? requestViewer.session : flowSession(),
         prefix === "viewer" ? requestViewer.id : state.activeId, format,
         prefix === "viewer" && viewerRequestUrl() !== requestViewer.flow?.request?.url
           ? viewerRequestUrl() : null);
@@ -2057,7 +2345,7 @@ for (const prefix of ["detail", "viewer"]) {
 
 /** 各报文区域独立调节高度，拖动期间不触发文本选择。 */
 for (const area of document.querySelectorAll(
-  "#detailHeaders, #detailContent, #detailQueryJson, #viewerHeaders, #viewerBodyArea, #viewerQueryJson"
+  "#viewerHeaders, #viewerBodyArea, #viewerQueryJson"
 )) {
   area.classList.add("vertical-area");
   const minimum = 64;
@@ -2096,9 +2384,15 @@ $("closeCurlCopy").onclick = $("doneCurlCopy").onclick = () => $("curlCopyDialog
 $("curlCopyDialog").addEventListener("close", () => { $("curlCopyText").value = ""; });
 
 // 正文工具操作不应触发所在 summary 的折叠。
-for (const id of ["detailCopyBody", "viewerMode", "viewerCopy", "viewerCollapse"]) {
-  $(id).addEventListener("click", event => event.stopPropagation());
+for (const id of ["detailCopyHeaders", "detailCopyBody", "viewerMode", "viewerCopy", "viewerCollapse"]) {
+  $(id).addEventListener("click", event => { event.stopPropagation(); if (id.startsWith("detail")) event.preventDefault(); });
 }
+$("detailEditReplay").closest("details").querySelector("summary").addEventListener("click", event => {
+  if ($("detailEditReplay").disabled) event.preventDefault();
+});
+// 低频操作执行后关闭所属浮层，保留原有业务事件。
+for (const id of ["detailLinks", "detailEditReplay", "viewerLinks", "viewerEditReplay", "addDecrypt", "addBlock"])
+  $(id).addEventListener("click", () => { const menu = $(id).closest("details"); if (menu) menu.open = false; });
 
 /** 校验详情中的 URL 草稿；仅影响后续操作，不修改已保存抓包。 */
 function viewerRequestUrl() {

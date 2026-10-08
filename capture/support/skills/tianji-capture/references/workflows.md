@@ -27,6 +27,14 @@ expression 是显式组对象，与快捷条件做 AND；不能同时传它和 f
 
 参数过滤的扫描与结果分页不同：即使 items 为空，只要 has_more=true，继续使用 next_offset。不能使用 items.length 计算下一页。scan_limit 为 1..200，prefilter_total 不是最终参数匹配总数。普通摘要查询按页继续，优先使用返回的 next_offset。
 
+## 跨批次重放查询与定位
+
+`search_replays(filters?, expression?, anchor_session?, anchor_id?, source_session?, source_id?)` 只读汇总本次启动的重放请求，默认 20 条、最多 100 条，offset 上限 100000。过滤条件与 search_requests 的快捷条件和 AND/OR 分组一致；不支持额外 parameter 扫描。排序和分页作用于全部批次，使用 next_offset/has_more 继续读取。
+
+每条摘要返回真实 session_id、id、original_session_id、original_flow_id。拿这些真实 ID 调 get_request、compare_requests 或其他单会话工具；界面的 `__replays__` 只是视图名称，不能用于 MCP 单会话操作。
+
+定位已有重放用 anchor_session/anchor_id；仅 anchor_session 定位批次最新记录。定位来源对应的最新重放用 source_session/source_id。两种定位不可混用，来源两个参数必须同时提供。结果 anchor_offset 是当前过滤及排序下的全局位置，不是另一个过滤条件；按所选 limit 计算该页 offset 后再次查询。未找到时定位字段为 null，其他结果仍返回。旧历史批次使用 list_sessions(include_archived=true) 和 search_requests 逐批查询。
+
 ## 正文和字段
 
 `get_request(session_id, flow_id)` 默认元数据。读取响应片段：`part="response", section="body", max_chars=12000`。offset 和 next_offset 是字符位置，正文预览最多 64 KiB；字段不会因为翻完预览而变完整。headers 为保留重复项的列表。

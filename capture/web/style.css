@@ -220,7 +220,8 @@ main {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 14px 18px;
+  padding: 5px 18px;
+  min-height: 40px;
 }
 .policy-bar > div {
   display: flex;
@@ -306,13 +307,13 @@ th {
   font-size: 11px;
   color: var(--muted);
   font-weight: 500;
-  padding: 12px 6px;
+  padding: 8px 6px;
   border-bottom: 1px solid var(--border);
   position: relative;
 }
 td {
   border-bottom: 1px solid var(--border-soft);
-  padding: 10px 6px;
+  padding: 6px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -360,15 +361,17 @@ tbody tr.active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 14px;
 }
-.request-host { font-size: 11px; margin-top: 3px; }
+.request-host { font-size: 11px; margin-top: 0; }
 .pagination {
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 9px;
+  padding: 4px 9px;
 }
+.pagination button { min-height: 28px; padding: 3px 9px; }
 .detail {
   min-width: 0;
   min-height: 0;
@@ -739,9 +742,6 @@ textarea:focus {
 .traffic {
   border-radius: 12px;
   box-shadow: var(--shadow);
-}
-.policy-bar {
-  min-height: 60px;
 }
 .session {
   border-radius: 9px;
@@ -1456,6 +1456,8 @@ header .header-actions a {
 
 /* 主视图只让列表正文滚动，筛选与批量操作使用浮层，避免窄窗口堆叠。 */
 .workspace > main {
+  padding: 12px;
+  gap: 10px;
   min-height: 0;
 }
 .traffic {
@@ -1463,9 +1465,11 @@ header .header-actions a {
 }
 .traffic > .toolbar {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto;
-  padding: 10px 12px;
+  /* 列表浮层整体高于详情操作栏，避免子菜单与按钮跨区域穿透。 */
+  z-index: 40;
+  display: flex;
+  flex-wrap: nowrap;
+  padding: 5px 12px;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -1477,23 +1481,38 @@ header .header-actions a {
   gap: 8px;
 }
 .toolbar-search {
-  flex: 1;
-  flex-wrap: wrap;
+  display: contents;
 }
 #quickSearchScope {
-  width: 160px;
-  max-width: 100%;
-  min-height: 34px;
+  flex: 0 1 10%;
+  width: 10%;
+  min-width: 70px;
+  max-width: 160px;
+  height: 30px;
+  min-height: 30px;
+  padding: 4px 8px;
 }
 .toolbar-search #search {
-  flex: 1;
-  min-width: 140px;
+  flex: 0 1 30%;
+  min-width: 40px;
+  max-width: 400px;
+  height: 30px;
+  padding: 4px 8px;
+}
+.toolbar-search #clearDisplayed {
+  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-height: 30px;
+  padding: 4px 9px;
 }
 .toolbar-actions {
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 .toolbar-actions > button {
-  min-height: 34px;
+  min-height: 30px;
+  padding: 4px 9px;
 }
 .toolbar-actions > button[aria-pressed="true"],
 .toolbar-actions > button[aria-expanded="true"],
@@ -1523,9 +1542,7 @@ header .header-actions a {
   font-size: 11px;
 }
 .traffic #search {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
+  width: 30%;
   margin: 0;
 }
 .traffic #sessionPicker {
@@ -1556,8 +1573,8 @@ header .header-actions a {
   cursor: pointer;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 10px;
-  min-height: 32px;
+  padding: 4px 9px;
+  min-height: 30px;
   list-style: none;
   font-size: 12px;
   white-space: nowrap;
@@ -1627,7 +1644,11 @@ header .header-actions a {
 .flow-list thead {
   position: static;
 }
+.flow-list td { padding: 3px 6px; }
+.flow-list td:nth-child(3) { text-overflow: clip; }
+.flow-list tbody button:not(.column-resizer) { min-height: 26px; padding: 2px 7px; }
 .flow-list th {
+  padding: 6px;
   position: sticky;
   top: 0;
   z-index: 3;
@@ -1640,7 +1661,8 @@ header .header-actions a {
   border-left: 1px solid var(--border);
   border-top: 0;
   background: var(--surface);
-  overflow: hidden;
+  overflow-y: auto;
+  container-type: inline-size;
 }
 #detailPanel .detail-header,
 #detailPanel .detail-actions,
@@ -1650,33 +1672,106 @@ header .header-actions a {
 }
 #detailPanel .detail-header {
   justify-content: space-between;
-  min-height: 52px;
-  padding: 10px 14px;
+  min-height: 38px;
+  padding: 5px 12px;
 }
 #detailPanel .detail-header strong {
   margin: 0;
   font-size: 14px;
 }
 #detailPanel .detail-actions {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.detail-main-actions {
-  display: flex;
-  flex: 1 1 250px;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 25;
 }
-.detail-main-actions button {
-  flex: 1 1 88px;
+#detailPanel .detail-actions > * { flex: none; }
+#detailPanel .detail-actions .detail-policy-actions,
+#detailPanel .detail-actions .detail-more-menu,
+#detailPanel .detail-actions .detail-replay-menu { position: static; }
+#detailPanel .detail-actions .detail-export-options,
+#detailPanel .detail-actions .detail-policy-options { right: 12px; }
+#detailPanel .detail-actions button,
+#detailPanel .detail-actions summary { white-space: nowrap; }
+.request-split { display: inline-flex; align-items: stretch; gap: 0; }
+.request-split > button { border-radius: 6px 0 0 6px; }
+.detail-replay-menu { position: relative; margin: 0; padding: 0; align-self: stretch; }
+.detail-replay-menu > summary {
+  display: grid; place-items: center; list-style: none; cursor: pointer;
+  box-sizing: border-box; padding: 0 6px; height: 100%; min-height: 30px;
+  border: 1px solid var(--border); border-left: 0; border-radius: 0 6px 6px 0;
+  background: var(--surface); font-size: 11px;
 }
+.detail-replay-menu > summary::-webkit-details-marker { display: none; }
+.detail-replay-menu[open] > summary { background: var(--selection); color: var(--blue); }
+.detail-menu-label { color: var(--muted); font-size: 10px; padding: 7px 8px 3px; }
+#detailPanel .detail-more-menu { margin-left: auto; min-width: 28px; }
+#detailPanel .detail-more-menu > summary { padding: 0 7px; font-size: 18px; }
+#detailPanel .detail-more-menu > summary::after { content: none; }
+#detailPanel .detail-actions button,
+#detailPanel .detail-actions summary { min-height: 30px; border-radius: 6px; font-size: 11px; padding: 5px 8px; }
+#detailPanel .request-split > button { border-radius: 6px 0 0 6px; }
+#detailPanel .detail-replay-menu > summary { border-radius: 0 6px 6px 0; padding: 0 6px; }
+#detailPanel .detail-export-options { min-width: min(180px, calc(100cqw - 24px)); max-width: calc(100cqw - 24px); max-height: min(360px, 55dvh); overflow-y: auto; }
+#detailPanel .detail-more-menu > summary { font-size: 18px; padding: 0 7px; }
+.action-label-compact { display: none; }
+.detail-replay-menu > summary[aria-disabled="true"] { opacity: .45; cursor: default; }
+.viewer-actions .request-split > button { min-height: 34px; }
+.viewer-actions .detail-replay-menu > summary { height: 34px; }
+.viewer-actions .detail-more-menu { min-width: 32px; }
+.viewer-actions .detail-more-menu > summary::after { content: none; }
+@container (max-width: 310px) {
+  #detailPanel .detail-actions { gap: 4px; padding: 6px 8px; }
+  #detailPanel .detail-actions button, #detailPanel .detail-actions summary { padding-left: 4px; padding-right: 4px; }
+  #detailPanel .action-label-wide { display: none; }
+  #detailPanel .action-label-compact { display: inline; }
+}
+#detailPanel .detail-summary { padding: 6px 12px 10px; white-space: normal; line-height: 1.5; }
+.detail-address-line { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.detail-method { flex: none; font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 4px; color: var(--blue); background: var(--selection); }
+.detail-address { min-width: 0; flex: 1; }
+.detail-address > summary { cursor: pointer; list-style: none; font: 12px/1.6 ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-address > summary::-webkit-details-marker { display: none; }
+#detailFullUrl { font: 11px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; padding-top: 5px; user-select: text; }
+.detail-status-line { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 5px; }
+.detail-status[data-tone="success"] { color: var(--success); }
+.detail-status[data-tone="danger"], #detailReason[data-tone="danger"] { color: var(--danger); }
+.detail-status[data-tone="warning"] { color: var(--warning); }
+#detailReason { margin: 4px 0 0; font-size: 11px; overflow-wrap: anywhere; }
+#detailPanel .message-headers > summary, #detailPanel .message-section-bar {
+  display: flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 11px;
+  background: var(--surface); border-top: 1px solid var(--border); border-bottom: 0;
+}
+#detailPanel .message-headers > summary { list-style: none; }
+#detailPanel .message-headers > summary::-webkit-details-marker { display: none; }
+#detailPanel .message-headers > summary::before { content: "▸"; }
+#detailPanel .message-headers[open] > summary::before { content: "▾"; }
+#detailPanel .message-headers > summary span { margin-left: 0; }
+#detailPanel .message-headers > summary button { margin-left: auto; }
+#detailPanel .message-headers > summary button, #detailPanel .message-section-bar button { padding: 3px 5px; font-size: 10px; }
+#detailPanel .message-section-bar strong { margin-right: 0; }
+#detailBodyState { margin-right: auto; font-size: 10px; }
+#detailBodyState { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#detailPanel .message-headers, #detailPanel .message-body-section { border-bottom: 0; }
+#detailHeaders { max-height: min(320px, 40dvh); overflow: auto; }
+#detailPanel .message-header-table th, #detailPanel .message-header-table td { padding: 3px 12px; font-size: 11px; }
+#detailContent { margin: 0; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; flex: none; }
+#detailPanel .viewer-notice:empty { display: none; }
+#detailPanel .query-preview { padding: 0 12px; }
+#detailPanel .query-preview button { min-height: 26px; padding: 4px 7px; font-size: 10px; }
+#detailPanel .query-preview:has(> button[hidden]):has(> pre[hidden]) { padding: 0; }
+#detailPanel .tabs { padding: 0 8px; }
+#detailPanel .tabs button { padding: 7px 8px; font-size: 11px; }
+#detailPanel .connection-info { padding: 8px 12px; }
+#detailPanel .connection-info section { margin: 8px 0; padding: 8px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+#detailPanel .connection-info dl { grid-template-columns: 88px minmax(0, 1fr); font-size: 11px; }
 .detail-policy-actions {
   flex: 0 1 auto;
-  min-width: 94px;
+  min-width: 0;
 }
 .detail-policy-actions summary {
   min-height: 32px;
@@ -1712,7 +1807,6 @@ header .header-actions a {
 .detail-policy-options button {
   flex: 1 1 145px;
 }
-#detailPanel .detail-actions button,
 .viewer-actions button {
   min-height: 34px;
   padding: 6px 9px;
@@ -1860,18 +1954,16 @@ button {
     width: 100%;
   }
   .traffic > .toolbar {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 8px;
-    gap: 6px;
+    padding: 5px 8px;
+    gap: 4px;
   }
   .toolbar-actions {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
+    gap: 4px;
   }
+  .toolbar-search #clearDisplayed,
+  #quickSearchScope,
   .toolbar-actions > button,
   .toolbar-actions > details > summary {
-    width: 100%;
     text-align: center;
     padding-left: 5px;
     padding-right: 5px;
@@ -2046,7 +2138,7 @@ button {
 }
 .message-header-table th,
 .message-header-table td {
-  padding: 7px 16px;
+  padding: 4px 12px;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
@@ -2150,14 +2242,6 @@ button {
   }
   #detailPanel .detail-actions {
     padding: 8px 10px;
-  }
-  .detail-main-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    flex-basis: 100%;
-  }
-  .detail-main-actions button {
-    width: 100%;
   }
   #requestViewer {
     width: 100vw;
@@ -2290,7 +2374,8 @@ button {
 }
 .traffic-navigation > button,
 .replay-menu > summary {
-  padding: 6px 10px;
+  padding: 3px 8px;
+  min-height: 28px;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -2299,6 +2384,7 @@ button {
   background: var(--selection);
   color: var(--blue);
 }
+#showReplays { position: relative; }
 .replay-menu {
   position: relative;
 }
@@ -2312,8 +2398,20 @@ button {
   display: none;
 }
 #replayCount {
-  margin-left: 4px;
-  color: var(--muted);
+  position: absolute;
+  top: -6px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
 }
 .replay-menu-panel {
   position: absolute;
@@ -2350,7 +2448,7 @@ button {
   .policy-bar {
     flex-wrap: wrap;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 5px 12px;
   }
   .traffic-navigation {
     margin-left: auto;
@@ -2452,7 +2550,7 @@ table.resizable-table td.resizable-cell { position: relative; }
 table.resizable-table .column-resizer { right: 0; }
 
 /* 表头按钮保持紧凑，列宽拖动手柄独立于排序点击区域。 */
-.sort-heading { border: 0; background: transparent; padding: 2px 8px 2px 0; color: inherit; font: inherit; white-space: nowrap; box-shadow: none; }
+.sort-heading { min-height: 24px; border: 0; background: transparent; padding: 2px 8px 2px 0; color: inherit; font: inherit; white-space: nowrap; box-shadow: none; }
 .sort-heading.active { color: var(--text); background: transparent; }
 .sort-heading:hover { color: var(--text); background: var(--hover); }
 #timeSortHeader { width: 110px; }
@@ -2492,16 +2590,14 @@ details:not([open]) .vertical-area-handle { display: none; }
 #detailPanel > .detail-actions.vertical-area, #requestViewer .viewer-actions.vertical-area { overflow: visible; }
 
 /* 控件区永远为自身内容预留空间；收缩的是数据区而不是按钮高度。 */
-#detailPanel > .detail-actions, #requestViewer .viewer-actions {
+#requestViewer .viewer-actions {
   height: auto; max-height: none; min-height: 54px; flex-shrink: 0; align-content: flex-start;
 }
-.detail-main-actions { align-items: flex-start; min-width: 0; }
-.detail-main-actions > button { flex: 1 0 88px; min-height: 34px; }
 .detail-export-menu { flex: 0 0 auto; min-width: 88px; align-self: flex-start; }
 .detail-export-menu > summary { display: flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; min-height: 34px; }
 .detail-export-menu > summary::after { content: "▾"; }
 .detail-export-menu[open] > summary::after { content: "▴"; }
-.detail-policy-actions { flex: 0 0 auto; min-width: 110px; }
+.detail-policy-actions { flex: 0 0 auto; min-width: 0; }
 .detail-policy-actions > summary { box-sizing: border-box; min-height: 34px; }
 .detail-policy-actions[open] { flex: 1 0 100%; }
 .detail-policy-actions[open] > summary::after { content: "⌃"; }
@@ -2547,7 +2643,7 @@ details:not([open]) .vertical-area-handle { display: none; }
 
 /* 策略弹层不参与布局，展开与收起保持工具栏和详情的位置不变。 */
 .detail-policy-actions, .detail-policy-actions[open] { position: relative; flex: 0 0 auto; }
-.detail-policy-options { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(320px, 75vw); padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px #0002; }
+.detail-policy-options { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: min(280px, calc(100cqw - 24px)); box-sizing: border-box; padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px #0002; }
 .detail-policy-options > button { flex: 1 1 100%; }
 /* 编辑器采用紧凑参数表；原文输入框明确铺满容器，避免 inline 尺寸回退。 */
 #editDialog { width: min(900px, 94vw); box-sizing: border-box; overflow-y: auto; }
@@ -2611,7 +2707,7 @@ details:not([open]) .vertical-area-handle { display: none; }
 .comparison-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
 .comparison-tabs { flex-wrap: wrap; gap: 4px; }
 .comparison-table { width: 100%; table-layout: fixed; }
-.comparison-table th, .comparison-table td { width: auto; padding: 8px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comparison-table th, .comparison-table td { width: auto; padding: 5px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
 .comparison-table th:first-child { width: 28%; font-size: 12px; }
 .comparison-table pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .comparison-table [data-kind="added"] th { color: var(--success, #248151); }

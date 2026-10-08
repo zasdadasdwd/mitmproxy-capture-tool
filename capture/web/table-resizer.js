@@ -23,10 +23,12 @@
 
     const key = `capture.table-columns.${tableKey(table)}`;
     const requestTable = Boolean(table.closest(".flow-list"));
-    // 默认给非地址列固定空间，把余下宽度留给接口；手调列宽仍保持用户比例。
+    // 按参考比例分配默认列宽，窄列表保留可读下限，余量优先给地址。
     const defaultRequestWidths = (available) => {
-      const result = [40, 62, 62, 240, 116, 72, 72, 60];
-      result[3] = Math.max(240, available - (result.reduce((sum, width) => sum + width, 0) - 240));
+      const ratios = [4, 8, 9, 43, 14, 8, 8, 6];
+      const floors = [40, 64, 78, 180, 112, 64, 64, 52];
+      const result = ratios.map((ratio, index) => Math.max(floors[index], available * ratio / 100));
+      result[3] = Math.max(floors[3], available - (result.reduce((sum, width) => sum + width, 0) - result[3]));
       return result;
     };
     let customWidths = false;

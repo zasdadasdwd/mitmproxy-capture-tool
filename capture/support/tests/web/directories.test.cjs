@@ -10,7 +10,7 @@ test('切换会话取消旧目录刷新后，新会话仍能安排刷新', () =>
   const elements = { directoryTree: { replaceChildren() {} }, directoryFilter: {}, search: {} };
   let canceled, scheduled = 0;
   const context = vm.createContext({
-    state, sessionFilters: new Map(), restoreFilters() {}, $: id => elements[id], clearTimeout: id => { canceled = id; },
+    state, REPLAY_VIEW: "__replays__", sessionFilters: new Map(), restoreFilters() {}, $: id => elements[id], clearTimeout: id => { canceled = id; },
     setTimeout: () => { scheduled++; return 43; },
     renderDetail() {}, renderSelection() {}, action: callback => callback,
   });

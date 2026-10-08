@@ -75,6 +75,7 @@ stdio 应由 Agent 客户端启动，不能与 Web 服务混用标准输入输�
 | `list_data_analysis_views` | 最近保存视图摘要 |
 | `list_sessions` | 当前会话摘要；显式 `include_archived=true` 查询历史；默认 20 条分页 |
 | `search_requests` | SQL 条件筛选摘要，可附加参数条件，默认 20 条，最多 100 条 |
+| `search_replays` | 跨本次启动全部重放批次全局排序分页；按重放 ID 或原请求来源定位，默认20条最多100条 |
 | `get_request` | 默认只取元数据；指定 part/section 后分段读取头部或正文 |
 | `get_parameters` | 返回可定位的参数路径，默认 50 个字段，可分页 |
 | `trace_parameter` | 在指定会话前序请求中追踪参数值的候选来源 |
@@ -83,7 +84,7 @@ stdio 应由 Agent 客户端启动，不能与 Web 服务混用标准输入输�
 | `replay_request` | 一次重放，可覆盖 URL、方法、头部、正文；具有网络副作用 |
 | `get_replay_result` | 查看任务状态、响应片段及相对原请求的变化 |
 
-当前提供 21 个工具。读工具标记 readOnlyHint；开始分析、控制记录与取消分析是本机状态操作，openWorldHint=false；重放有外部网络副作用。delete_requests 标记 destructiveHint=true，只能在用户已授权的会话/ID 范围内调用。工具注解用于客户端判断，不代替用户授权。
+当前提供 22 个工具。读工具标记 readOnlyHint；开始分析、控制记录与取消分析是本机状态操作，openWorldHint=false；重放有外部网络副作用。delete_requests 标记 destructiveHint=true，只能在用户已授权的会话/ID 范围内调用。工具注解用于客户端判断，不代替用户授权。
 
 MCP 不提供任意 SQL、任意 Python 执行、在线写入 Hook、安装证书或全局配置修改。输出报文仍可能含原始凭据，不声称具有 Proxyman 的握手认证和全输出自动脱敏；审计日志单独做脱敏。
 
@@ -215,3 +216,7 @@ MCP 自带资源 `tianji://guide/workflows`、`tianji://guide/connection`，以�
 优先以客户端实时 tools/list、resources/list、prompts/list 为准；升级服务后重新加载 MCP 客户端。状态诊断只返回必要设置，省略上游代理凭据。HTTP 连接池有界，连接/超时错误给出工作台排障指引；不自动重试重放、记录或删除等写操作。
 
 普通 get_request 会同时报告 body_state/body_size/saved_bytes/capture_error 和 HTTP 版本。代码导出默认 60000 字符、最多 100000 字符，流式限制读取字节；超限拒绝，不输出误导性的半段代码。WebSocket 查询 max_chars 默认 2000、最多 8000，保留采集截断与消息丢弃状态。
+
+### 合并重放查询
+
+`search_replays` 不需要单一 session_id；返回的每条请求带真实 session_id，供 get_request、compare_requests 和其他操作使用。source_session/source_id 可定位来源的最新重放，anchor_session/anchor_id 可定位已有重放，anchor_offset 是全局排序后的索引，定位不筛除其他记录。分页使用 next_offset/has_more，offset 最大100000。工具为只读，不自动重放或删除。旧工作台和 MCP 实例需要重启才能加载新增接口及工具；记录中不自动重启。Skill 源码与指南资源同步更新。

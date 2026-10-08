@@ -21,6 +21,7 @@ description: 使用天机阁 MCP 查询抓包、分析请求与响应、追踪�
 - **两条请求为何不同**：`compare_requests`，可跨抓包/重放会话。核对重复头、Query 顺序、原始编码、正文及 HTTP 版本，说明差异上限。
 - **生成可复现代码**：`export_request_code(format="curl"|"requests")` 只返回代码，不运行。超限改用工作台复制/导出；不要自己从展示 JSON 重拼丢失编码的请求。
 - **长连接**：`get_websocket_messages` 分页读方向、序号、时间和关闭状态；文本预览可能截断，二进制只返回元信息。它不发送消息、不关闭连接。
+- **查看全部重放或找来源对应记录**：`search_replays` 跨本次启动全部重放批次检索与全局排序分页；可用 source_session/source_id 返回来源最新重放的定位信息。定位不缩小结果范围，后续详情、对比或删除必须使用每条结果的真实 session_id，不能使用 UI 的虚拟视图键。
 - **重放**：只在用户已授权的目标和次数内调用 `replay_request`。随后用 `get_replay_result` 查看独立批次状态，拿到新 flow_id 再读取响应与对比。提交成功不等于请求成功。
 
 参数格式、分页和示例见 [查询与证据工作流](references/workflows.md)。服务器也提供 `tianji://guide/workflows` 与 `tianji://guide/connection` 资源。

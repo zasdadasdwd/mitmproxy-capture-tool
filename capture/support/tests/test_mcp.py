@@ -256,7 +256,7 @@ def test_mcp_tools_and_developer_audit(evidence, tmp_path):
         )
         async with server.resources():
             tools = await server.list_tools()
-            assert len(tools) == 21
+            assert len(tools) == 22
             search = next(item for item in tools if item.name == "search_requests")
             assert search.annotations.readOnlyHint
             replay = next(item for item in tools if item.name == "replay_request")
@@ -723,5 +723,93 @@ def test_mcp_status_controls_and_connection_errors(tmp_path):
         async with server.resources():
             with pytest.raises(ToolError, match="无法连接天机阁"):
                 await server.call_tool("get_workbench_status", {})
+
+    asyncio.run(run())
+
+
+def test_mcp_aggregate_replays_pagination_location_and_contract(evidence, tmp_path):
+    """MCP 可分页跨批次重放，并按真实批次读取定位详情。"""
+    store, source = evidence
+    batches = [
+        store.create_session(Settings().model_dump(), kind="replay") for _ in range(2)
+    ]
+    for index, batch in enumerate(batches):
+        store.save_flow(
+            batch,
+            {
+                "id": f"replayed-{index}",
+                "started": 200 + index,
+                "method": "POST",
+                "url": "https://example.test/api",
+                "status": "complete",
+                "code": 200,
+                "source": "replay",
+                "original_session_id": source,
+                "original_flow_id": "business",
+                "response": {"headers": [], "body_text": "ok"},
+            },
+        )
+        store.finish(batch)
+
+    async def run():
+        server = create_server(
+            "http://127.0.0.1:8765",
+            log_path=tmp_path / "replays.jsonl",
+            transport=httpx.ASGITransport(app=app_module.app),
+        )
+        async with server.resources():
+            tools = {tool.name: tool for tool in await server.list_tools()}
+            assert tools["search_replays"].annotations.readOnlyHint
+            assert not tools["search_replays"].annotations.openWorldHint
+            first = structured(
+                await server.call_tool(
+                    "search_replays",
+                    {
+                        "filters": {"limit": 1},
+                        "source_session": source,
+                        "source_id": "business",
+                    },
+                )
+            )
+            assert first["total"] == 2 and first["has_more"]
+            assert first["anchor_id"] == "replayed-1" and first["anchor_offset"] == 0
+            assert first["items"][0]["session_id"] == batches[1]
+            second = structured(
+                await server.call_tool(
+                    "search_replays",
+                    {
+                        "filters": {"limit": 1, "offset": first["next_offset"]},
+                        "expression": {
+                            "operator": "and",
+                            "children": [
+                                {"field": "method", "operator": "eq", "value": "POST"}
+                            ],
+                        },
+                    },
+                )
+            )
+            assert second["items"][0]["id"] == "replayed-0" and not second["has_more"]
+            detail = structured(
+                await server.call_tool(
+                    "get_request",
+                    {
+                        "session_id": first["items"][0]["session_id"],
+                        "flow_id": first["items"][0]["id"],
+                    },
+                )
+            )
+            assert detail["original_session_id"] == source
+            for options in (
+                {"anchor_id": "missing"},
+                {"source_id": "missing"},
+                {"filters": {"offset": 100001}},
+                {
+                    "anchor_session": batches[0],
+                    "source_session": source,
+                    "source_id": "business",
+                },
+            ):
+                with pytest.raises(ToolError):
+                    await server.call_tool("search_replays", options)
 
     asyncio.run(run())

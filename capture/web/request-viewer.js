@@ -335,6 +335,7 @@ class RequestViewer {
     const decodedBody = decodeRequestBody(message);
     const replayable =
       !!this.flow.request &&
+      this.flow.method !== "CONNECT" &&
       !this.flow.websocket &&
       !this.flow.request.truncated &&
       this.flow.status !== "pending";

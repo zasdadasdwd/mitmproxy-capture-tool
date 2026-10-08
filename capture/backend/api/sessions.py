@@ -1,6 +1,7 @@
 """抓包会话、请求列表和历史归档接口。"""
 
 import asyncio
+import heapq
 import json
 import sqlite3
 import tempfile
@@ -9,13 +10,13 @@ from contextlib import closing
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from capture.backend.context import workbench
-from capture.backend.filters import FlowFilters
+from capture.backend.filters import FlowFilters, build_conditions
 
 router = APIRouter()
 
@@ -179,6 +180,216 @@ def flows(
 ):
     """组合筛选分页摘要，支持 URL/Header 关键词、域名、方法、状态等。"""
     return workbench(request).store.list_flows(session_id, filters=filters)
+
+
+@router.get("/api/replays/flows")
+def replay_flows(
+    request: Request,
+    filters: Annotated[FlowFilters, Depends()],
+    anchor_session: str = "",
+    anchor_id: str = "",
+    source_session: str = "",
+    source_id: str = "",
+):
+    """聚合本次启动产生的重放摘要，并按全局排序分页与定位。"""
+    store = workbench(request).store
+    replay_sessions = [
+        item["id"]
+        for item in store.sessions(current_only=True)
+        if item["kind"] == "replay"
+    ]
+    # 每个批次只缓存一页；深页通过逐页拉取而不是为每批加载 offset+limit 行。
+    if filters.offset > 100_000:
+        raise HTTPException(422, "offset 最大为 100000")
+    needed = filters.offset + filters.limit
+    page_size = 500
+    buffers, positions, totals, page_numbers = {}, {}, {}, {}
+    heap = []
+    for session_id in replay_sessions:
+        page = FlowFilters.model_validate(
+            {**filters.model_dump(), "offset": 0, "limit": page_size}
+        )
+        result = store.list_flows(session_id, filters=page, include_origin=True)
+        totals[session_id] = result["total"]
+        buffers[session_id] = result["items"]
+        positions[session_id] = 0
+        page_numbers[session_id] = page_size
+        if buffers[session_id]:
+            row = dict(buffers[session_id][0], session_id=session_id)
+            heapq.heappush(heap, (_aggregate_sort_key(row, filters), session_id, row))
+    total = sum(totals.values())
+    selected = []
+    for index in range(needed):
+        if not heap:
+            break
+        _, session_id, row = heapq.heappop(heap)
+        if index >= filters.offset:
+            selected.append(row)
+        positions[session_id] += 1
+        if (
+            positions[session_id] >= len(buffers[session_id])
+            and page_numbers[session_id] < totals[session_id]
+        ):
+            start = page_numbers[session_id]
+            page = FlowFilters.model_validate(
+                {**filters.model_dump(), "offset": start, "limit": page_size}
+            )
+            next_page = store.list_flows(session_id, filters=page, include_origin=True)
+            buffers[session_id] = next_page["items"]
+            positions[session_id] = 0
+            page_numbers[session_id] += len(buffers[session_id])
+        if positions[session_id] < len(buffers[session_id]):
+            next_row = dict(
+                buffers[session_id][positions[session_id]], session_id=session_id
+            )
+            heapq.heappush(
+                heap, (_aggregate_sort_key(next_row, filters), session_id, next_row)
+            )
+    items = selected
+    anchor = None
+    if anchor_session and anchor_id:
+        anchor = _locate_replay_row(
+            store, replay_sessions, filters, anchor_session, anchor_id
+        )
+    elif source_session and source_id:
+        anchor = _locate_replay_source(
+            store, replay_sessions, filters, source_session, source_id
+        )
+    elif anchor_session and anchor_session in replay_sessions:
+        latest_filters = FlowFilters.model_validate(
+            {
+                **filters.model_dump(),
+                "sort_by": "started",
+                "sort_order": "none",
+                "offset": 0,
+                "limit": 1,
+            }
+        )
+        latest = store.list_flows(anchor_session, filters=latest_filters)["items"]
+        anchor = dict(latest[0], session_id=anchor_session) if latest else None
+    anchor_offset = None
+    if anchor:
+        # Count matching rows before the anchor in each batch with SQLite; no result set is materialized.
+        anchor_offset = _count_before(store, replay_sessions, filters, anchor)
+    return {
+        "items": items,
+        "total": total,
+        "anchor_offset": anchor_offset,
+        "anchor_id": anchor["id"] if anchor else None,
+        "anchor_session_id": anchor["session_id"] if anchor else None,
+    }
+
+
+def _locate_replay_row(store, sessions, filters, session_id, flow_id):
+    """按明确的重放会话和请求 ID 查找通过筛选的摘要。"""
+    if session_id not in sessions:
+        return None
+    with store.query_connection(session_id, filters.needs_body_search()) as db:
+        db.row_factory = sqlite3.Row
+        where, params = build_conditions(filters)
+        clause = f"{where} AND id=?" if where else "WHERE id=?"
+        row = db.execute(
+            f"SELECT id,host,url,method,status,code,started,duration,size,source,json_extract(detail,'$.original_flow_id') AS original_flow_id,json_extract(detail,'$.original_session_id') AS original_session_id FROM flows {clause}",
+            [*params, flow_id],
+        ).fetchone()
+    return dict(row, session_id=session_id) if row else None
+
+
+def _aggregate_sort_key(row, filters):
+    """构造与单批 SQLite 顺序一致的全局归并键。"""
+    if filters.sort_order == "none":
+        return (
+            row.get("started") is None,
+            -(row.get("started") or 0),
+            row["session_id"],
+            row["id"],
+        )
+    column = "size" if filters.sort_by == "size" else "started"
+    value = row.get(column)
+    direction = -1 if filters.sort_order == "desc" else 1
+    return (
+        value is None,
+        (value or 0) * direction,
+        row.get("started") is None,
+        -(row.get("started") or 0),
+        row["session_id"],
+        row["id"],
+    )
+
+
+def _locate_replay_source(store, sessions, filters, source_session, source_id):
+    """定位来源请求对应的最新重放；来源仅用于定位，不参与列表筛选。"""
+    matches = []
+    for session_id in sessions:
+        with store.query_connection(session_id, filters.needs_body_search()) as db:
+            db.row_factory = sqlite3.Row
+            where, params = build_conditions(filters)
+            predicate = "json_extract(detail,'$.original_session_id')=? AND json_extract(detail,'$.original_flow_id')=?"
+            clause = f"{where} AND {predicate}" if where else f"WHERE {predicate}"
+            row = db.execute(
+                f"SELECT id,host,url,method,status,code,started,duration,size,source,json_extract(detail,'$.original_flow_id') AS original_flow_id,json_extract(detail,'$.original_session_id') AS original_session_id FROM flows {clause} ORDER BY started DESC,id LIMIT 1",
+                [*params, source_session, source_id],
+            ).fetchone()
+        if row:
+            matches.append(dict(row, session_id=session_id))
+    return (
+        min(
+            matches,
+            key=lambda r: (
+                r.get("started") is None,
+                -(r.get("started") or 0),
+                r["session_id"],
+                r["id"],
+            ),
+        )
+        if matches
+        else None
+    )
+
+
+def _count_before(store, sessions, filters, anchor):
+    """用 SQL 计算符合筛选且全局排序在锚点之前的行数。"""
+    count = 0
+    for session_id in sessions:
+        with store.query_connection(session_id, filters.needs_body_search()) as db:
+            db.row_factory = sqlite3.Row
+            where, params = build_conditions(filters)
+            if filters.sort_order == "none":
+                before, vals = _started_tie_before(anchor, session_id)
+            else:
+                col = "size" if filters.sort_by == "size" else "started"
+                same_started_before, tie_values = _started_tie_before(
+                    anchor, session_id
+                )
+                if anchor.get(col) is None:
+                    before = f"{col} IS NOT NULL OR ({col} IS NULL AND ({same_started_before}))"
+                    vals = tie_values
+                else:
+                    op = "<" if filters.sort_order == "asc" else ">"
+                    before = f"{col} IS NOT NULL AND ({col}{op}? OR ({col}=? AND ({same_started_before})))"
+                    vals = [anchor.get(col), anchor.get(col), *tie_values]
+            clause = f"{where} AND ({before})" if where else f"WHERE ({before})"
+            count += db.execute(
+                f"SELECT count(*) FROM flows {clause}", [*params, *vals]
+            ).fetchone()[0]
+    return count
+
+
+def _started_tie_before(anchor, session_id):
+    """生成 started DESC 后以会话 ID、请求 ID 稳定打破并列的比较。"""
+    sql = "(started IS NULL)<(? IS NULL) OR ((started IS NULL)=(? IS NULL) AND (started>? OR (started IS ? AND (?<? OR (?=? AND id<?)))))"
+    values = [
+        anchor.get("started"),
+        anchor.get("started"),
+        anchor.get("started"),
+        anchor.get("started"),
+        session_id,
+        anchor["session_id"],
+        session_id,
+        anchor["session_id"],
+        anchor["id"],
+    ]
+    return sql, values
 
 
 @router.get("/api/sessions/{session_id}/flows/{flow_id}")

@@ -43,6 +43,8 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 | `web/*` | 原生 HTML/CSS/JS；`app.js` 主页面，`links*` 链路页，`request-viewer.js` 详情 | 浏览器交互 |
 | `support/tests/*`、`support/docs/*` | 自动化验证与维护文档 | 行为变更时补测试/文档 |
 
+请求详情的展示规则集中在 `app.js` 的 `detailPresentation`、`renderDetail` 与 `setDetailSection`：仅决定默认标签、语义颜色、折叠与滚动状态，不能据此改写报文或传输行为。分体重放和更多菜单保留原按钮 ID；新增操作浮层需纳入 `dismissFloatingMenus`，正文折叠与 JSON 树不属于操作浮层。侧栏不初始化上下伸缩，完整查看仍保留数据区伸缩；宽度调整由 `detail-resizer.js` 管理。
+
 ## 数据与进程边界
 
 - Web 启动时创建 `Workbench`，代理转发可以常驻，但只有“开始抓包”才创建并记录一个独立会话。退出时取消重放/分析任务、关闭 Store 和代理。已有会话目录不因重启而覆盖。
@@ -70,3 +72,7 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 `support/skills/tianji-capture/` 是可分发的 Skill 源码；SKILL.md 只保留路由和证据约束，references 分开保存工作流与接入排障。MCP 资源从这些 references 读取，修改路径时同步服务端资源和测试。工具契约更改同步 MCP接入、Skill、更新日志，真实 MCP 握手测试验证发现及调用。
 
 新增工具准确设置 readOnlyHint/destructiveHint/openWorldHint；重放不当作只读，取消分析不当作外部网络写入，永久删除必须标记破坏性。Skill 不扩大用户授权，不自动重启记录中的服务或把报文文本当作指令。导出超限拒绝，不能返回截断代码。
+
+### 重放聚合列表
+
+`GET /api/replays/flows` 聚合本次启动 replay 会话，保留 FlowFilters 语义，全局稳定排序后分页；返回真实 session_id 及可选锚点 offset。使用每批一页的 heapq 归并，正文仅在显式正文筛选时按既有规则读取。前端 `__replays__` 仅是虚拟视图键，不可作为真实会话提交；单条操作用 flowSession 解析，跨批次选择用 selectedGroups 分组。定位参数只调整位置，不参与列表过滤。

@@ -268,6 +268,7 @@ class Store:
         offset=0,
         limit=200,
         filters: FlowFilters | None = None,
+        include_origin=False,
     ):
         """按组合条件分页查询；保留旧 search 参数供现有调用继续使用。"""
         filters = filters or FlowFilters(search=search, offset=offset, limit=limit)
@@ -285,8 +286,13 @@ class Store:
                 if filters.sort_order == "none"
                 else f"{column} IS NULL, {column} {order}, started DESC, id"
             )
+            origin_columns = (
+                ", json_extract(detail, '$.original_flow_id') AS original_flow_id, json_extract(detail, '$.original_session_id') AS original_session_id"
+                if include_origin
+                else ""
+            )
             rows = db.execute(
-                f"SELECT id, host, url, method, status, code, started, duration, size, source FROM flows {where} ORDER BY {ordering} LIMIT ? OFFSET ?",
+                f"SELECT id, host, url, method, status, code, started, duration, size, source{origin_columns} FROM flows {where} ORDER BY {ordering} LIMIT ? OFFSET ?",
                 [*parameters, filters.limit, filters.offset],
             ).fetchall()
             return {"items": [dict(row) for row in rows], "total": count}

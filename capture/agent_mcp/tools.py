@@ -82,6 +82,62 @@ def register_tools(server, client, audit):
             },
         )
 
+    async def search_replays(
+        filters: RequestFilters | None = None,
+        expression: FilterGroup | None = None,
+        anchor_session: str | None = None,
+        anchor_id: str | None = None,
+        source_session: str | None = None,
+        source_id: str | None = None,
+    ) -> dict[str, Any]:
+        """只读查询本次启动全部重放批次，全局排序后分页，默认20条最多100条，offset最大100000。每条返回真实session_id和原始来源ID。anchor_session/anchor_id定位重放记录；只传anchor_session定位批次最新记录；source_session/source_id定位来源的最新重放。定位仅返回anchor_offset，不筛除其他请求；后续get_request/compare_requests必须使用每条真实session_id，不能把聚合视图名当成批次ID。"""
+        filters = filters or RequestFilters()
+        if filters.offset > 100000:
+            raise ValueError("offset 最大为 100000")
+        if expression is not None:
+            if filters.expression:
+                raise ValueError("expression 与 filters.expression 请选择一个")
+            filters = RequestFilters.model_validate(
+                {
+                    **filters.model_dump(),
+                    "expression": expression.model_dump_json(),
+                }
+            )
+        if (anchor_id and not anchor_session) or bool(source_session) != bool(
+            source_id
+        ):
+            raise ValueError(
+                "anchor_id 需要 anchor_session；source_session/source_id 必须同时提供"
+            )
+        if (anchor_session or anchor_id) and (source_session or source_id):
+            raise ValueError("重放定位与来源定位请选择一种")
+        anchors = {
+            key: value
+            for key, value in {
+                "anchor_session": anchor_session,
+                "anchor_id": anchor_id,
+                "source_session": source_session,
+                "source_id": source_id,
+            }.items()
+            if value is not None
+        }
+        for value in anchors.values():
+            client.path(value)
+        result = await client.request(
+            "GET",
+            "/api/replays/flows",
+            params={
+                **filters.model_dump(exclude_none=True),
+                **anchors,
+            },
+        )
+        next_offset = min(result["total"], filters.offset + filters.limit)
+        return {
+            **result,
+            "has_more": next_offset < result["total"],
+            "next_offset": next_offset,
+        }
+
     async def get_request(
         session_id: str,
         flow_id: str,
@@ -466,6 +522,7 @@ def register_tools(server, client, audit):
         list_data_analysis_views,
         list_sessions,
         search_requests,
+        search_replays,
         get_request,
         get_parameters,
         trace_parameter,

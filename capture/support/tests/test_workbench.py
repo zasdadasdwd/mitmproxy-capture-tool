@@ -155,6 +155,104 @@ def wait_for(api, predicate, timeout=8):
     raise AssertionError("等待采集事件超时")
 
 
+def test_replay_flow_aggregation_global_page_filters_and_anchor(client):
+    """聚合重放批次全局排序分页，并支持筛选和来源定位。"""
+    api, _ = client
+    store = api.app.state.workbench.store
+    settings = config.load_settings().model_dump()
+    first = store.create_session(settings, kind="replay")
+    second = store.create_session(settings, kind="replay")
+    capture = store.create_session(settings, kind="capture")
+    for session_id, entries in (
+        (
+            first,
+            [
+                ("a", 1, "GET", "src", "source-a"),
+                ("b", 3, "POST", "src", "source-b"),
+                ("e", 5, "GET", "src", "source-a"),
+            ],
+        ),
+        (
+            second,
+            [
+                ("c", 2, "GET", "other", "source-a"),
+                ("d", 4, "GET", "other", "source-a"),
+            ],
+        ),
+        (capture, [("ignored", 99, "GET", "other", "source-a")]),
+    ):
+        for flow_id, started, method, host, original in entries:
+            store.save_flow(
+                session_id,
+                {
+                    "id": flow_id,
+                    "started": started,
+                    "method": method,
+                    "url": f"http://{host}/{flow_id}",
+                    "host": f"{host}.test",
+                    "status": "complete",
+                    "code": 200,
+                    "size": None if flow_id == "e" else started,
+                    "source": "replay",
+                    "original_session_id": "origin",
+                    "original_flow_id": original,
+                },
+            )
+    response = api.get("/api/replays/flows", params={"offset": 1, "limit": 2})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["total"] == 5
+    assert [row["id"] for row in result["items"]] == ["d", "b"]
+    assert all(row["session_id"] in {first, second} for row in result["items"])
+    assert all(
+        "original_flow_id" in row and "original_session_id" in row
+        for row in result["items"]
+    )
+
+    sorted_page = api.get(
+        "/api/replays/flows",
+        params={
+            "sort_by": "size",
+            "sort_order": "asc",
+            "limit": 1,
+            "anchor_session": first,
+            "anchor_id": "b",
+        },
+    ).json()
+    assert sorted_page["items"][0]["id"] == "a"
+    assert sorted_page["anchor_offset"] == 2
+    assert sorted_page["anchor_session_id"] == first
+
+    null_anchor = api.get(
+        "/api/replays/flows",
+        params={
+            "sort_by": "size",
+            "sort_order": "asc",
+            "limit": 1,
+            "anchor_session": first,
+            "anchor_id": "e",
+        },
+    ).json()
+    assert null_anchor["anchor_offset"] == 4
+
+    filtered = api.get(
+        "/api/replays/flows", params={"method": "POST", "limit": 10}
+    ).json()
+    assert [row["id"] for row in filtered["items"]] == ["b"]
+    located = api.get(
+        "/api/replays/flows",
+        params={
+            "source_session": "origin",
+            "source_id": "source-a",
+            "method": "GET",
+            "limit": 1,
+        },
+    ).json()
+    assert located["total"] == 4
+    assert located["anchor_id"] == "e"
+    assert located["anchor_offset"] == 0
+
+
 def update_policy(api, **values):
     settings = api.get("/api/status").json()["settings"]
     settings.update(values)
@@ -833,3 +931,51 @@ def test_clear_live_capture_keeps_proxy_and_accepts_new_requests(client, origin)
         )
         assert all("/before-clear" not in row["url"] for row in rows)
         assert any("/after-clear" in row["url"] for row in rows)
+
+
+def test_replay_aggregate_anchor_with_evicted_connections_and_nulls(tmp_path):
+    """超过连接缓存容量及正文筛选时，定位仍读取 Row，空排序值稳定排名。"""
+    from capture.backend.api.sessions import replay_flows
+    from capture.backend.filters import FlowFilters
+
+    store = Store(tmp_path / "aggregate")
+    try:
+        sessions = [
+            store.create_session(config.Settings().model_dump(), kind="replay")
+            for _ in range(10)
+        ]
+        for index, session in enumerate(sessions):
+            store.save_flow(
+                session,
+                {
+                    "id": f"flow-{index}",
+                    "started": None if index in (0, 1) else index,
+                    "size": None,
+                    "status": "complete",
+                    "source": "replay",
+                    "original_session_id": "origin",
+                    "original_flow_id": "source",
+                    "response": {"body_text": "needle", "headers": []},
+                },
+            )
+        request = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(workbench=SimpleNamespace(store=store))
+            )
+        )
+        for filters in (
+            FlowFilters(),
+            FlowFilters(sort_by="size", sort_order="asc"),
+            FlowFilters(search="needle", scope="response_body"),
+        ):
+            result = replay_flows(
+                request, filters, anchor_session=sessions[0], anchor_id="flow-0"
+            )
+            expected = next(
+                i for i, row in enumerate(result["items"]) if row["id"] == "flow-0"
+            )
+            assert result["anchor_offset"] == expected
+            assert result["total"] == 10
+            assert result["anchor_session_id"] == sessions[0]
+    finally:
+        store.close()

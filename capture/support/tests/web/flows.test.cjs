@@ -58,7 +58,7 @@ test('实时列表未变化时不重建表格，切换查询仍渲染空结果',
 });
 
 test('抓包期间可删除选中和清空，整批删除仍需停止',()=>{
-  const elements=Object.fromEntries(['deleteSelected','clearSession','deleteSession','selectionCount','toolbarSelectionCount','actionCount','selectPage','repeat','export','editRepeat','compareSelected'].map(id=>[id,{}]));
+  const elements=Object.fromEntries(['deleteSelected','clearSession','clearDisplayed','deleteSession','selectionCount','toolbarSelectionCount','actionCount','selectPage','repeat','export','editRepeat','compareSelected'].map(id=>[id,{}]));
   const state={session:'live',status:{session_id:'live'},selected:new Set(['one']),rows:[]};
   const ctx=vm.createContext({state,$:id=>elements[id]});
   vm.runInContext(source.slice(source.indexOf('function renderSelection()'),source.indexOf('/** 删除后清理详情')),ctx);
