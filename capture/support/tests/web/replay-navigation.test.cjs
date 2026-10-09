@@ -29,3 +29,10 @@ test('定位跨页重放后仍展示全部匹配结果，并自动打开详情',
   assert.equal(state.offset,200); assert.equal(state.total,450); assert.equal(state.rows.length,2);
   assert.equal(loaded,'target'); assert.equal(scrolled,true); assert.match(queries[1],/offset=200/);
 });
+test('仅有重放会话时返回抓包保持空视图，不自动重新选中重放批次', async () => {
+  const state={session:null,archivedSession:null,status:{},sessions:[]};
+  const ctx=vm.createContext({state,REPLAY_VIEW:'__replays__',json:async()=>[{id:'replay-only',kind:'replay'}],switchSession(id){state.session=id;}});
+  const body=source.slice(source.indexOf('async function refreshSessions() {')+'async function refreshSessions() {'.length,source.indexOf('  const replays = state.sessions.filter'));
+  vm.runInContext(`async function refresh(){${body}}`,ctx);
+  await vm.runInContext('refresh()',ctx);assert.equal(state.session,null);
+});

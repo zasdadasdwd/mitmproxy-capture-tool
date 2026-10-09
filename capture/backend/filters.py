@@ -30,6 +30,7 @@ class FlowFilters(BaseModel):
         "error",
         "interrupted",
     ] = ""
+    record_visibility: Literal["all", "hide_blocked_passthrough", "hide_blocked", "hide_passthrough", "errors"] = "all"
     source: Literal["", "capture", "replay"] = ""
     content_type: str = Field(default="", max_length=200)
     min_duration: float | None = Field(default=None, ge=0)
@@ -167,6 +168,18 @@ def build_conditions(filters: FlowFilters) -> tuple[str, list]:
         if value:
             conditions.append(f"{column} = ?")
             parameters.append(value)
+    # 记录状态独立于 HTTP 状态码，与快捷/高级条件共同参与统计及分页。
+    excluded = {
+        "hide_blocked_passthrough": ("blocked", "passthrough"),
+        "hide_blocked": ("blocked",),
+        "hide_passthrough": ("passthrough",),
+    }.get(filters.record_visibility)
+    if excluded:
+        conditions.append("coalesce(status, '') NOT IN (" + ",".join("?" for _ in excluded) + ")")
+        parameters.extend(excluded)
+    elif filters.record_visibility == "errors":
+        conditions.append("status = ?")
+        parameters.append("error")
     if filters.status_code:
         value = filters.status_code
         if "xx" in value:

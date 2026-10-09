@@ -5,7 +5,8 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.resolve(__dirname, '../../../web/app.js'), 'utf8');
 function setup() {
-  const elements = Object.fromEntries(['search','quickSearchScope','filterKeyword','searchScope','filterHost','directoryFilter','directoryTree'].map(id=>[id,{value:'',replaceChildren(){}}]));
+  const elements = Object.fromEntries(['search','quickSearchScope','filterKeyword','searchScope','filterHost','directoryFilter','directoryTree','recordVisibility'].map(id=>[id,{value:'',replaceChildren(){}}]));
+  elements.recordVisibility.value="all";
   const state = {session:'capture',sessions:[{id:'capture',kind:'capture'}], selected:new Set(),directoryOpen:new Set(),refreshSequence:0, advancedExpression:null,directory:null};
   const context=vm.createContext({state,filterFields:{filterHost:'host'},$:id=>elements[id],structuredClone,clearTimeout(){},renderDetail(){},renderSelection(){},setQuickFilterDisabled(){},syncFilterControls(){},URLSearchParams,filtersChanged(){}});
   vm.runInContext(source.slice(source.indexOf('const sessionFilters ='),source.indexOf('const filterFields')),context);
@@ -28,4 +29,12 @@ test('内层条件清空外层关键词，查询使用内层范围；外层关�
   run('innerFiltersChanged()');assert.equal(elements.search.value,'');assert.equal(elements.quickSearchScope.value,'url');
   assert.equal(run('filterParams().get("search")'),'inner');assert.equal(run('filterParams().get("scope")'),'bodies');
   elements.search.value='new';elements.quickSearchScope.value='response_body';run('outerFiltersChanged()');assert.equal(elements.filterKeyword.value,'');assert.equal(run('filterParams().get("scope")'),'response_body');
+});
+
+test('记录状态条件与抓包/重放会话独立保存，普通重放入口清空其他条件时保留表头选择',()=>{
+ const {elements,run}=setup();elements.recordVisibility.value='hide_blocked';
+ run('switchSession("__replays__")');assert.equal(elements.recordVisibility.value,'all');
+ elements.recordVisibility.value='errors';run('switchSession("capture")');assert.equal(elements.recordVisibility.value,'hide_blocked');
+ run('switchSession("__replays__");restoreFilters(null,true)');assert.equal(elements.recordVisibility.value,'errors');
+ assert.equal(run('filterParams().get("record_visibility")'),'errors');
 });

@@ -52,3 +52,8 @@ test('Escape 优先关闭菜单，不关闭完整详情弹窗', () => {
   assert.ok(menus.every(menu => !menu.open));
   assert.equal(closed(), 0);
 });
+test('清空筛选按钮在捕获阶段不关闭面板', () => {
+  const {panel,listeners}=setup();
+  listeners.pointerdown.callback({target:{closest(selector){return selector.includes('#clearFilters') ? this : null;}}});
+  assert.equal(panel.hidden,false);
+});

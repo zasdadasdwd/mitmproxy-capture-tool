@@ -248,3 +248,9 @@ mitmproxy-capture-tool/
 ### 天机阁 Agent Skill
 
 配套 [tianji-capture Skill](capture/support/skills/tianji-capture/SKILL.md) 可复制到 Agent 的 skills 目录，用于查接口、追踪 token 首次出现、比较请求、生成 cURL/requests 和验证重放。Skill 与 MCP 接入分别配置，详见 [MCP 接入](capture/support/docs/MCP接入.md)。它只描述当前实现能力，值匹配不被当作客户端生成函数证据。
+
+历史会话管理支持逐项勾选、全选当前搜索/类型筛选结果及批量清理；清理会永久删除选中会话及其请求正文，需要在页面确认。请求目录同时展示透传和被阻止请求的 host，无接口路径时显示域名根节点。
+
+请求目录底部的 host 搜索只过滤左侧域名目录，忽略大小写；清空恢复全部域名，不改变右侧请求列表的筛选条件。
+
+请求列表的“状态”表头支持按记录状态隐藏阻止/透传或仅看错误，与其他筛选共同作用并先过滤后分页。抓包与重放各自记忆选择，“清空所有筛选”恢复全部；错误指记录状态 error，并非 HTTP 错误状态码。

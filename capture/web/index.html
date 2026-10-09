@@ -6,7 +6,7 @@
     <title>流量工作台 · 天机阁</title>
     <link rel="icon" type="image/png" href="/favicon.png?v=20261004" />
     <script src="/theme.js"></script>
-    <link rel="stylesheet" href="/style.css?v=20261009-replay-list" />
+    <link rel="stylesheet" href="/style.css?v=20261009-empty-capture" />
   </head>
   <body>
     <header>
@@ -53,6 +53,7 @@
         <div id="directoryTree" class="directory-tree">
           <p class="muted">选择会话后显示目录</p>
         </div>
+        <div class="directory-search"><input id="directoryHostSearch" type="search" placeholder="过滤 host…" aria-label="过滤请求目录 host" autocomplete="off" spellcheck="false" /></div>
         <div class="aside-footer">
           <button id="openSettings" class="footer-settings" aria-label="设置">
             <span aria-hidden="true" class="settings-icon">⚙</span
@@ -100,9 +101,10 @@
           <span id="policyVersion" class="muted"></span>
           <div class="traffic-navigation">
             <button id="showCapture" type="button">抓包列表</button>
+            <div class="replay-navigation-split">
             <button id="showReplays" type="button">重放记录 <span id="replayCount" hidden>0</span></button>
             <details id="replayMenu" class="replay-menu">
-              <summary aria-label="管理重放批次" title="管理重放批次">▾</summary>
+              <summary aria-label="管理重放批次" title="管理重放批次"><span class="replay-caret" aria-hidden="true">▾</span></summary>
               <div class="replay-menu-panel">
                 <div class="replay-menu-heading">
                   <strong>本次启动的重放记录</strong
@@ -118,6 +120,7 @@
                 <div id="replayRecords"></div>
               </div>
             </details>
+            </div>
           </div>
         </section>
         <section class="traffic">
@@ -132,11 +135,11 @@
                   <option value="all">全部内容（含正文）</option>
                 </select>
               <input id="search" placeholder="搜索关键词…" aria-label="搜索流量" />
-              <button id="clearDisplayed" type="button" disabled>清空当前请求</button>
               <span id="total" class="muted">0 条记录</span>
+              <button id="clearDisplayed" type="button" disabled>清空当前请求</button>
             </div>
             <div class="toolbar-actions">
-              <button id="toggleFilters" type="button" aria-expanded="false">筛选</button>
+              <div class="filter-button-group"><button id="toggleFilters" type="button" aria-expanded="false">筛选</button><button id="clearFilters" type="button" title="清空所有筛选" aria-label="清空所有筛选" hidden>×</button></div>
               <button id="openAdvancedFilters" type="button" aria-pressed="false">多条件筛选</button>
               <button id="repeat" type="button" class="primary" disabled>重放选中 <span id="toolbarSelectionCount" hidden></span></button>
               <details id="flowActions" class="flow-actions">
@@ -285,7 +288,9 @@
                           aria-label="选择本页"
                         />
                       </th>
-                      <th>状态</th>
+                      <th><label id="statusFilterHeading" class="status-filter-heading" title="全部"><span aria-hidden="true">状态 ▾</span><select id="recordVisibility" aria-label="按记录状态过滤" title="全部">
+                        <option value="all">全部</option><option value="hide_blocked_passthrough">隐藏阻止和透传</option><option value="hide_blocked">隐藏阻止</option><option value="hide_passthrough">隐藏透传</option><option value="errors">仅看错误</option>
+                      </select></label></th>
                       <th>方法</th>
                       <th>请求地址</th>
                       <th id="timeSortHeader" aria-sort="none"><button id="sortStarted" class="sort-heading" type="button" title="按请求开始时间排序">请求时间 ↕</button></th>
@@ -1027,7 +1032,7 @@
     <script src="/connection-info.js?v=20261008-transport"></script>
     <script src="/replay-editor.js?v=20261008-compact"></script>
     <script src="/request-comparison.js?v=20261008-live-delete"></script>
-    <script src="/app.js?v=20261009-replay-list"></script>
+    <script src="/app.js?v=20261009-empty-capture"></script>
     <script src="/detail-resizer.js?v=20261001-fine-resize"></script>
     <script src="/table-resizer.js?v=20261009-compact-list"></script>
   </body>

@@ -6,7 +6,7 @@
     <title>历史会话管理 · 天机阁</title>
     <link rel="icon" type="image/png" href="/favicon.png?v=20261004" />
     <script src="/theme.js"></script>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/style.css?v=20261009-history-selection" />
   </head>
   <body>
     <header>
@@ -41,12 +41,13 @@
             <option value="">全部类型</option>
             <option value="capture">抓包</option>
             <option value="replay">重放</option></select
-          ><span id="historyTotal" class="muted">加载中…</span>
+          ><label class="history-select-all"><input id="historySelectAll" type="checkbox" aria-label="全选当前显示会话" />全选</label><span id="historyTotal" class="muted">加载中…</span><button id="historyClearSelected" class="danger" type="button" disabled>清理选中</button>
         </div>
         <div class="history-table">
           <table>
             <thead>
               <tr>
+                <th>选择</th>
                 <th>启动时间 / 会话 ID</th>
                 <th>类型</th>
                 <th>记录数</th>
@@ -73,7 +74,7 @@
         <p id="deleteHistoryDescription"></p>
         <p>SQLite、请求及响应正文、日志将永久删除，无法恢复。</p>
         <label
-          >输入完整会话 ID 确认<input
+          ><span id="deleteHistoryPrompt">输入完整会话 ID 确认</span><input
             id="deleteHistoryId"
             autocomplete="off"
             required
@@ -92,7 +93,7 @@
       </form>
     </dialog>
     <div id="toast" role="status"></div>
-    <script src="/history.js"></script>
+    <script src="/history.js?v=20261009-selection"></script>
     <script src="/table-resizer.js?v=20261004-review1"></script>
   </body>
 </html>

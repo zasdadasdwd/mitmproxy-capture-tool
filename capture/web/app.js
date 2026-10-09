@@ -53,7 +53,7 @@ async function openReplayList(anchor = null) {
   $("replayMenu").open = false;
   switchSession(REPLAY_VIEW);
   // 点击入口展示全部记录；返回抓包时仍恢复原筛选。
-  restoreFilters(null);
+  restoreFilters(null, true);
   state.rows = [];
   state.total = 0;
   renderRows();
@@ -282,7 +282,7 @@ async function refreshSessions() {
           session.id === state.status?.session_id && session.kind === "capture",
       )?.id ||
       state.sessions.find((session) => session.kind === "capture")?.id ||
-      state.sessions[0].id;
+      null;
   const replays = state.sessions.filter((session) => session.kind === "replay");
   $("clearReplays").disabled =
     !replays.length ||
@@ -303,9 +303,7 @@ async function refreshSessions() {
     "active",
     !$("replayMenu").classList.contains("active"),
   );
-  $("showCapture").disabled = !state.sessions.some(
-    (session) => session.kind === "capture",
-  );
+  $("showCapture").disabled = false;
   if (!replays.length) {
     const hint = document.createElement("p");
     hint.className = "muted";
@@ -348,13 +346,15 @@ const sessionFilters = new Map();
 function filterSnapshot() {
   return {
     values: Object.fromEntries(["search", "quickSearchScope", "filterKeyword", "searchScope", ...Object.keys(filterFields)].map(id => [id, $(id).value])),
+    recordVisibility: $("recordVisibility").value,
     advancedExpression: structuredClone(state.advancedExpression),
     directory: structuredClone(state.directory),
   };
 }
-function restoreFilters(snapshot) {
+function restoreFilters(snapshot, keepRecordVisibility = false) {
   for (const id of ["search", "quickSearchScope", "filterKeyword", "searchScope", ...Object.keys(filterFields)])
     $(id).value = snapshot?.values[id] ?? (id.endsWith("Scope") ? "url" : "");
+  if (!keepRecordVisibility) $("recordVisibility").value = snapshot?.recordVisibility ?? "all";
   state.advancedExpression = structuredClone(snapshot?.advancedExpression ?? null);
   state.directory = structuredClone(snapshot?.directory ?? null);
   $("directoryFilter").hidden = !state.directory;
@@ -461,7 +461,7 @@ function renderDirectories(records) {
   if (!roots.size) {
     const hint = document.createElement("p");
     hint.className = "muted";
-    hint.textContent = "暂无 HTTP 请求目录";
+    hint.textContent = "暂无请求目录";
     tree.append(hint);
   }
   function appendNode(node, parent) {
@@ -514,8 +514,32 @@ function renderDirectories(records) {
     item.append(children);
     parent.append(item);
   }
-  for (const root of roots.values()) appendNode(root, tree);
+  for (const root of roots.values()) {
+    appendNode(root, tree);
+    tree.lastElementChild.dataset.host = root.host;
+  }
+  filterDirectoryHosts();
 }
+/** 仅过滤已渲染的 host 根节点，不触发请求查询或改变路径选择。 */
+function filterDirectoryHosts() {
+  const keyword = $("directoryHostSearch").value.trim().toLowerCase();
+  const roots = $("directoryTree").querySelectorAll(":scope > .directory-node");
+  let visible = 0;
+  for (const root of roots) {
+    root.hidden = !root.dataset.host.toLowerCase().includes(keyword);
+    if (!root.hidden) visible++;
+  }
+  let hint = $("directoryHostEmpty");
+  if (!hint) {
+    hint = document.createElement("p");
+    hint.id = "directoryHostEmpty";
+    hint.className = "muted";
+    hint.textContent = "没有匹配的 host";
+    $("directoryTree").append(hint);
+  }
+  hint.hidden = !roots.length || visible > 0;
+}
+$("directoryHostSearch").oninput = filterDirectoryHosts;
 $("clearDirectory").onclick = () => {
   state.directory = null;
   $("directoryFilter").hidden = true;
@@ -547,6 +571,7 @@ function filterParams() {
       if (value) parameters.set(key, value);
     }
   }
+  if ($("recordVisibility").value !== "all") parameters.set("record_visibility", $("recordVisibility").value);
   if (state.directory) {
     parameters.set("host", state.directory.host);
     parameters.set("path_prefix", state.directory.path);
@@ -1347,11 +1372,17 @@ $("refreshSessions").onclick = action(async () => {
 });
 /** 工具栏分别显示普通筛选与分组筛选的选中状态。 */
 function syncFilterControls() {
+  const visibility = $("recordVisibility");
+  const label = visibility.options[visibility.selectedIndex]?.textContent || "全部";
+  $("statusFilterHeading").dataset.active = String(visibility.value !== "all");
+  $("statusFilterHeading").title = label;
+  visibility.title = label;
   const quickCount = ["filterKeyword", ...Object.keys(filterFields)].filter((id) => $(id).value.trim()).length;
   const advancedCount = state.advancedExpression
     ? countAdvancedConditions(state.advancedExpression) : 0;
   $("toggleFilters").textContent = quickCount ? `筛选 (${quickCount})` : "筛选";
   $("toggleFilters").dataset.active = String(Boolean(quickCount));
+  $("clearFilters").hidden = ![...filterParams().keys()].some(key => !["sort_by", "sort_order", "scope"].includes(key));
   $("openAdvancedFilters").textContent = advancedCount
     ? `多条件 (${advancedCount})` : "多条件筛选";
   $("openAdvancedFilters").setAttribute("aria-pressed", String(Boolean(advancedCount)));
@@ -1427,7 +1458,7 @@ function dismissFloatingMenus(target = null) {
   let dismissed = false;
   if (
     !$("filterPanel").hidden &&
-    !target?.closest?.("#filterPanel, #toggleFilters")
+    !target?.closest?.("#filterPanel, #toggleFilters, #clearFilters")
   ) {
     hideFilters();
     dismissed = true;
@@ -1453,6 +1484,7 @@ document.addEventListener("keydown", (event) => {
   } else if (!document.querySelector("dialog[open]")) $("closeDetail").click();
 }, true);
 $("resetFilters").onclick = () => {
+  $("recordVisibility").value = "all";
   state.advancedExpression = null;
   setQuickFilterDisabled(false);
   state.directory = null;
@@ -1465,6 +1497,13 @@ $("resetFilters").onclick = () => {
   $("searchScope").value = "url";
   for (const id of Object.keys(filterFields)) $(id).value = "";
   filtersChanged();
+};
+$("recordVisibility").onchange = filtersChanged;
+$("clearFilters").onclick = (event) => {
+  event.stopPropagation();
+  $("resetFilters").onclick();
+  // 清空后按钮隐藏，把焦点交还筛选入口，不切换面板状态。
+  $("toggleFilters").focus();
 };
 $("selectPage").onchange = (event) => {
   for (const flow of state.rows)

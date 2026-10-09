@@ -385,13 +385,15 @@ class Store:
 
     @staticmethod
     def directory_key(host, url):
-        """把 URL 归并成域名和路径，不让查询参数生成重复目录。"""
+        """HTTP 按路径归并；无接口路径的透传/阻止记录保留域名根节点。"""
         try:
             parsed = urlsplit(url)
         except ValueError:
             return None
-        if parsed.scheme not in ("http", "https"):
+        if not host:
             return None
+        if parsed.scheme not in ("http", "https"):
+            return host, "/"
         return host, parsed.path or "/"
 
     def directories(self, session_id: str):
