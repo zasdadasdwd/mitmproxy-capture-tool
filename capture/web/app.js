@@ -65,30 +65,10 @@ async function openReplayList(anchor = null) {
     throw error;
   }
 }
-/** 主题按钮描述下一步操作，主题在页面加载前恢复。 */
-function updateThemeButton() {
-  const dark = document.documentElement.dataset.theme === "dark";
-  $("themeLabel").textContent = dark ? "白色" : "黑色";
-  $("themeToggle").setAttribute(
-    "aria-label",
-    dark ? "切换到白色主题" : "切换到黑色主题",
-  );
-  $("themeToggle").setAttribute("aria-pressed", String(dark));
-}
-$("themeToggle").onclick = () => {
-  applyTheme(
-    document.documentElement.dataset.theme === "dark" ? "light" : "dark",
-  );
-  updateThemeButton();
-};
-updateThemeButton();
-window.addEventListener("storage", (event) => {
-  if (event.key === "capture.theme") {
-    document.documentElement.dataset.theme =
-      event.newValue === "dark" ? "dark" : "light";
-    updateThemeButton();
-  }
-});
+/** 主题按钮描述当前主题；顶部和设置页共用主题选择，不改抓包/请求状态。 */
+initThemePicker($("themeToggle"));
+initThemeCards($("themeCards"));
+document.addEventListener("appearance-menu-open", () => dismissFloatingMenus());
 
 /** 动画只响应用户操作，并遵循系统的减少动态效果设置。 */
 const elementAnimations = new WeakMap();
@@ -1815,7 +1795,6 @@ $("settingsDialog").querySelector(".settings-nav").onkeydown = (event) => {
 };
 $("settingsTheme").onchange = () => {
   applyTheme($("settingsTheme").value);
-  updateThemeButton();
 };
 $("settingsForm").onsubmit = action(async (event) => {
   event.preventDefault();

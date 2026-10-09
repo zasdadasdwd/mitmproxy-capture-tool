@@ -208,3 +208,67 @@ def test_full_text_view_omits_duplicate_encodings(tmp_path):
     assert "body_b64" not in text and "decoded_b64" not in text
     assert base64.b64decode(full["body_b64"]) == raw
     store.close()
+
+
+def test_failed_update_reclaims_only_uncommitted_bodies(tmp_path):
+    """序列化失败不能遗留新正文，也不能删除旧请求仍引用的文件。"""
+    store = Store(tmp_path)
+    session = store.create_session(Settings().model_dump())
+    store.save_flow(session, {"id": "a", "request": {"body_b64": "b2xk"}})
+    bodies = tmp_path / session / "bodies"
+    original = set(bodies.iterdir())
+    with pytest.raises(TypeError):
+        store.save_flow(session, {
+            "id": "a", "request": {"body_b64": "bmV3"},
+            "response": {"body_b64": "bmV3"}, "invalid": object(),
+        })
+    assert set(bodies.iterdir()) == original
+    assert store.get_flow(session, "a")["request"]["body_text"] == "old"
+    store.close()
+
+
+def test_partial_body_write_is_reclaimed(tmp_path, monkeypatch):
+    """磁盘写入部分字节后失败，半成品仍会被回收。"""
+    from pathlib import Path
+
+    store = Store(tmp_path)
+    session = store.create_session(Settings().model_dump())
+    write = Path.write_bytes
+
+    def fail(path, content):
+        write(path, content[:1])
+        raise OSError("synthetic disk failure")
+
+    monkeypatch.setattr(Path, "write_bytes", fail)
+    with pytest.raises(OSError, match="synthetic"):
+        store.save_flow(session, {"id": "a", "request": {"body_b64": "bmV3"}})
+    assert not list((tmp_path / session / "bodies").iterdir())
+    assert store.list_flows(session)["total"] == 0
+    store.close()
+
+
+def test_directory_ignores_query_fragment_without_merging_paths(tmp_path):
+    store = Store(tmp_path)
+    session = store.create_session(Settings().model_dump())
+    for index, suffix in enumerate(["/a?x=1", "/a?x=2#other", "/a#frag?x=3", "/a%3Fb", "/b"]):
+        store.save_flow(session, {"id": str(index), "host": "example.test", "url": "https://example.test" + suffix})
+    assert {row["path"]: row["count"] for row in store.directories(session)} == {
+        "/a": 3, "/a%3Fb": 1, "/b": 1,
+    }
+    store.close()
+
+
+def test_descending_time_sort_uses_index_and_keeps_nulls_last(tmp_path):
+    """倒序不构建临时排序表；缺失时间与同时间 ID 的顺序保持稳定。"""
+    from capture.backend.filters import FlowFilters
+
+    store = Store(tmp_path)
+    session = store.create_session(Settings().model_dump())
+    for identifier, started in [("z", None), ("b", 1), ("a", 1), ("new", 2)]:
+        store.save_flow(session, {"id": identifier, "started": started})
+    result = store.list_flows(session, filters=FlowFilters(sort_order="desc"))
+    assert [row["id"] for row in result["items"]] == ["new", "a", "b", "z"]
+    with store.connect(session) as db:
+        plan = db.execute("EXPLAIN QUERY PLAN SELECT id FROM flows ORDER BY started DESC, id LIMIT 200").fetchall()
+    assert not any("TEMP B-TREE" in str(row) for row in plan)
+    store.close()

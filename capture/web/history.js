@@ -182,8 +182,5 @@ $("deleteHistoryForm").onsubmit = action(async (event) => {
     await refresh();
   }
 });
-$("historyTheme").onclick = () =>
-  applyTheme(
-    document.documentElement.dataset.theme === "dark" ? "light" : "dark",
-  );
+initThemePicker($("historyTheme"));
 action(refresh)();

@@ -1,0 +1,411 @@
+{
+  "comparison": {
+    "directories": {
+      "before": 763.92,
+      "after": 138.831
+    },
+    "preview": {
+      "before": 0.332,
+      "after": 0.327
+    },
+    "list_first_page": {
+      "before": 3.201,
+      "after": 3.389
+    },
+    "list_deep_page": {
+      "before": 4.629,
+      "after": 4.599
+    },
+    "list_filtered": {
+      "before": 46.732,
+      "after": 45.663
+    },
+    "list_sorted": {
+      "before": 50.561,
+      "after": 3.297
+    },
+    "body_replacements": {
+      "before": 0.904,
+      "after": 0.863
+    }
+  },
+  "runs": {
+    "before": [
+      {
+        "environment": {
+          "python": "3.12.10",
+          "sqlite": "3.49.1",
+          "platform": "Darwin",
+          "timing_with_tracemalloc": true
+        },
+        "rows": 50000,
+        "body_bytes": 8388608,
+        "directories": {
+          "median_ms": 0.526,
+          "first_ms": 753.198,
+          "p95_ms": 753.198,
+          "peak_kib": 77.2
+        },
+        "preview": {
+          "median_ms": 0.344,
+          "first_ms": 1.692,
+          "p95_ms": 1.692,
+          "peak_kib": 199.7
+        },
+        "list_first_page": {
+          "median_ms": 3.456,
+          "first_ms": 4.027,
+          "p95_ms": 9.048,
+          "peak_kib": 171.6
+        },
+        "list_deep_page": {
+          "median_ms": 4.715,
+          "first_ms": 4.386,
+          "p95_ms": 5.315,
+          "peak_kib": 143.7
+        },
+        "list_filtered": {
+          "median_ms": 50.86,
+          "first_ms": 52.381,
+          "p95_ms": 57.584,
+          "peak_kib": 146.1
+        },
+        "list_sorted": {
+          "median_ms": 51.588,
+          "first_ms": 47.881,
+          "p95_ms": 250.915,
+          "peak_kib": 144.9
+        },
+        "body_replacements": {
+          "median_ms": 0.992,
+          "first_ms": 1.457,
+          "p95_ms": 1.955,
+          "peak_kib": 32.2
+        },
+        "cleanup": {
+          "body_files_after_100_replacements": 2,
+          "deleted": 1,
+          "body_files_after_delete": 1,
+          "connections_after_close": 0
+        },
+        "full_view": {
+          "raw_json_bytes": 30758402,
+          "text_json_bytes": 8388743
+        }
+      },
+      {
+        "environment": {
+          "python": "3.12.10",
+          "sqlite": "3.49.1",
+          "platform": "Darwin",
+          "timing_with_tracemalloc": true
+        },
+        "rows": 50000,
+        "body_bytes": 8388608,
+        "directories": {
+          "median_ms": 0.232,
+          "first_ms": 779.198,
+          "p95_ms": 779.198,
+          "peak_kib": 70.2
+        },
+        "preview": {
+          "median_ms": 0.332,
+          "first_ms": 0.531,
+          "p95_ms": 0.534,
+          "peak_kib": 135.1
+        },
+        "list_first_page": {
+          "median_ms": 3.158,
+          "first_ms": 3.464,
+          "p95_ms": 3.58,
+          "peak_kib": 145.5
+        },
+        "list_deep_page": {
+          "median_ms": 4.535,
+          "first_ms": 4.449,
+          "p95_ms": 4.761,
+          "peak_kib": 143.7
+        },
+        "list_filtered": {
+          "median_ms": 44.62,
+          "first_ms": 47.063,
+          "p95_ms": 47.507,
+          "peak_kib": 145.0
+        },
+        "list_sorted": {
+          "median_ms": 46.008,
+          "first_ms": 46.959,
+          "p95_ms": 47.496,
+          "peak_kib": 144.9
+        },
+        "body_replacements": {
+          "median_ms": 0.866,
+          "first_ms": 1.331,
+          "p95_ms": 1.779,
+          "peak_kib": 26.5
+        },
+        "cleanup": {
+          "body_files_after_100_replacements": 2,
+          "deleted": 1,
+          "body_files_after_delete": 1,
+          "connections_after_close": 0
+        },
+        "full_view": {
+          "raw_json_bytes": 30758402,
+          "text_json_bytes": 8388743
+        }
+      },
+      {
+        "environment": {
+          "python": "3.12.10",
+          "sqlite": "3.49.1",
+          "platform": "Darwin",
+          "timing_with_tracemalloc": true
+        },
+        "rows": 50000,
+        "body_bytes": 8388608,
+        "directories": {
+          "median_ms": 0.209,
+          "first_ms": 763.92,
+          "p95_ms": 763.92,
+          "peak_kib": 70.2
+        },
+        "preview": {
+          "median_ms": 0.317,
+          "first_ms": 0.473,
+          "p95_ms": 0.473,
+          "peak_kib": 135.1
+        },
+        "list_first_page": {
+          "median_ms": 3.201,
+          "first_ms": 3.353,
+          "p95_ms": 3.496,
+          "peak_kib": 145.5
+        },
+        "list_deep_page": {
+          "median_ms": 4.629,
+          "first_ms": 4.303,
+          "p95_ms": 5.308,
+          "peak_kib": 143.7
+        },
+        "list_filtered": {
+          "median_ms": 46.732,
+          "first_ms": 51.897,
+          "p95_ms": 94.546,
+          "peak_kib": 145.0
+        },
+        "list_sorted": {
+          "median_ms": 50.561,
+          "first_ms": 46.542,
+          "p95_ms": 66.837,
+          "peak_kib": 144.9
+        },
+        "body_replacements": {
+          "median_ms": 0.904,
+          "first_ms": 1.51,
+          "p95_ms": 2.141,
+          "peak_kib": 26.5
+        },
+        "cleanup": {
+          "body_files_after_100_replacements": 2,
+          "deleted": 1,
+          "body_files_after_delete": 1,
+          "connections_after_close": 0
+        },
+        "full_view": {
+          "raw_json_bytes": 30758402,
+          "text_json_bytes": 8388743
+        }
+      }
+    ],
+    "after": [
+      {
+        "environment": {
+          "python": "3.12.10",
+          "sqlite": "3.49.1",
+          "platform": "Darwin",
+          "timing_with_tracemalloc": true
+        },
+        "rows": 50000,
+        "body_bytes": 8388608,
+        "directories": {
+          "median_ms": 0.221,
+          "first_ms": 134.004,
+          "p95_ms": 134.004,
+          "peak_kib": 12.2
+        },
+        "preview": {
+          "median_ms": 0.327,
+          "first_ms": 0.506,
+          "p95_ms": 0.506,
+          "peak_kib": 135.1
+        },
+        "list_first_page": {
+          "median_ms": 3.406,
+          "first_ms": 3.5,
+          "p95_ms": 3.689,
+          "peak_kib": 145.7
+        },
+        "list_deep_page": {
+          "median_ms": 4.967,
+          "first_ms": 4.43,
+          "p95_ms": 6.776,
+          "peak_kib": 143.7
+        },
+        "list_filtered": {
+          "median_ms": 46.739,
+          "first_ms": 46.455,
+          "p95_ms": 90.373,
+          "peak_kib": 145.0
+        },
+        "list_sorted": {
+          "median_ms": 3.532,
+          "first_ms": 3.846,
+          "p95_ms": 4.295,
+          "peak_kib": 144.5
+        },
+        "body_replacements": {
+          "median_ms": 0.896,
+          "first_ms": 1.323,
+          "p95_ms": 1.262,
+          "peak_kib": 27.0
+        },
+        "cleanup": {
+          "body_files_after_100_replacements": 2,
+          "deleted": 1,
+          "body_files_after_delete": 1,
+          "connections_after_close": 0
+        },
+        "full_view": {
+          "raw_json_bytes": 30758402,
+          "text_json_bytes": 8388743
+        }
+      },
+      {
+        "environment": {
+          "python": "3.12.10",
+          "sqlite": "3.49.1",
+          "platform": "Darwin",
+          "timing_with_tracemalloc": true
+        },
+        "rows": 50000,
+        "body_bytes": 8388608,
+        "directories": {
+          "median_ms": 0.232,
+          "first_ms": 138.831,
+          "p95_ms": 138.831,
+          "peak_kib": 12.2
+        },
+        "preview": {
+          "median_ms": 0.316,
+          "first_ms": 0.595,
+          "p95_ms": 0.595,
+          "peak_kib": 135.1
+        },
+        "list_first_page": {
+          "median_ms": 3.256,
+          "first_ms": 3.476,
+          "p95_ms": 3.612,
+          "peak_kib": 145.5
+        },
+        "list_deep_page": {
+          "median_ms": 4.599,
+          "first_ms": 4.396,
+          "p95_ms": 5.202,
+          "peak_kib": 143.7
+        },
+        "list_filtered": {
+          "median_ms": 45.239,
+          "first_ms": 44.678,
+          "p95_ms": 51.822,
+          "peak_kib": 145.0
+        },
+        "list_sorted": {
+          "median_ms": 3.241,
+          "first_ms": 3.567,
+          "p95_ms": 3.79,
+          "peak_kib": 144.5
+        },
+        "body_replacements": {
+          "median_ms": 0.836,
+          "first_ms": 1.012,
+          "p95_ms": 1.151,
+          "peak_kib": 26.3
+        },
+        "cleanup": {
+          "body_files_after_100_replacements": 2,
+          "deleted": 1,
+          "body_files_after_delete": 1,
+          "connections_after_close": 0
+        },
+        "full_view": {
+          "raw_json_bytes": 30758402,
+          "text_json_bytes": 8388743
+        }
+      },
+      {
+        "environment": {
+          "python": "3.12.10",
+          "sqlite": "3.49.1",
+          "platform": "Darwin",
+          "timing_with_tracemalloc": true
+        },
+        "rows": 50000,
+        "body_bytes": 8388608,
+        "directories": {
+          "median_ms": 0.21,
+          "first_ms": 153.117,
+          "p95_ms": 153.117,
+          "peak_kib": 12.2
+        },
+        "preview": {
+          "median_ms": 0.378,
+          "first_ms": 0.487,
+          "p95_ms": 0.634,
+          "peak_kib": 135.1
+        },
+        "list_first_page": {
+          "median_ms": 3.389,
+          "first_ms": 3.791,
+          "p95_ms": 3.791,
+          "peak_kib": 145.5
+        },
+        "list_deep_page": {
+          "median_ms": 4.317,
+          "first_ms": 4.355,
+          "p95_ms": 8.463,
+          "peak_kib": 143.7
+        },
+        "list_filtered": {
+          "median_ms": 45.663,
+          "first_ms": 50.928,
+          "p95_ms": 50.928,
+          "peak_kib": 145.0
+        },
+        "list_sorted": {
+          "median_ms": 3.297,
+          "first_ms": 3.434,
+          "p95_ms": 3.692,
+          "peak_kib": 144.5
+        },
+        "body_replacements": {
+          "median_ms": 0.863,
+          "first_ms": 1.196,
+          "p95_ms": 1.169,
+          "peak_kib": 26.8
+        },
+        "cleanup": {
+          "body_files_after_100_replacements": 2,
+          "deleted": 1,
+          "body_files_after_delete": 1,
+          "connections_after_close": 0
+        },
+        "full_view": {
+          "raw_json_bytes": 30758402,
+          "text_json_bytes": 8388743
+        }
+      }
+    ]
+  },
+  "baseline_commit": "bbb25ec"
+}

@@ -135,6 +135,18 @@ class Store:
 
     def save_flow(self, session_id: str, flow: dict):
         """合并请求生命周期事件，正文落盘后保存引用，清理被替换的旧正文。"""
+        created = []
+        committed = [False]
+        try:
+            self._save_flow(session_id, flow, created, committed)
+        finally:
+            # 只回收本次未提交的文件，保留旧记录与流式写入器提供的正文。
+            if not committed[0]:
+                for path in created:
+                    path.unlink(missing_ok=True)
+
+    def _save_flow(self, session_id, flow, created, committed):
+        """跟踪新正文与数据库提交边界，失败时由调用方回收半成品。"""
         with self.lock:
             # 删除标记跨重启保留，迟到的响应/流式事件不能复活请求。
             with self.connect(session_id) as db:
@@ -164,9 +176,9 @@ class Store:
                     content = base64.b64decode(message.pop("body_b64"))
                     if content:
                         filename = uuid4().hex + ".bin"
-                        (self.root / session_id / "bodies" / filename).write_bytes(
-                            content
-                        )
+                        path = self.root / session_id / "bodies" / filename
+                        created.append(path)
+                        path.write_bytes(content)
                         message["body_file"] = filename
                     else:
                         message.pop("body_file", None)
@@ -206,6 +218,7 @@ class Store:
                         json.dumps(detail),
                     ),
                 )
+            committed[0] = True
             cached = self.directory_cache.get(session_id)
             new_directory = self.directory_key(
                 detail.get("host", ""), detail.get("url", "")
@@ -281,11 +294,13 @@ class Store:
             # 模型限定字段和方向；缺失大小排最后，同值用时间和 ID 稳定分页。
             order = "ASC" if filters.sort_order == "asc" else "DESC"
             column = "size" if filters.sort_by == "size" else "started"
-            ordering = (
-                "started DESC, id"
-                if filters.sort_order == "none"
-                else f"{column} IS NULL, {column} {order}, started DESC, id"
-            )
+            if filters.sort_order == "none" or (column == "started" and order == "DESC"):
+                ordering = "started DESC, id"
+            elif order == "DESC":
+                # SQLite 的 DESC 已将 NULL 排最后；额外表达式会阻止索引命中。
+                ordering = f"{column} DESC, started DESC, id"
+            else:
+                ordering = f"{column} IS NULL, {column} ASC, started DESC, id"
             origin_columns = (
                 ", json_extract(detail, '$.original_flow_id') AS original_flow_id, json_extract(detail, '$.original_session_id') AS original_session_id"
                 if include_origin
@@ -387,7 +402,8 @@ class Store:
     def directory_key(host, url):
         """HTTP 按路径归并；无接口路径的透传/阻止记录保留域名根节点。"""
         try:
-            parsed = urlsplit(url)
+            # 目录不使用 Query/Fragment；移除后相同路径可命中 urlsplit 的有界缓存。
+            parsed = urlsplit((url or "").partition("?")[0].partition("#")[0])
         except ValueError:
             return None
         if not host:
@@ -402,12 +418,11 @@ class Store:
             counts = self.directory_cache.get(session_id)
             if counts is None:
                 counts = Counter()
-                for host, url, count in db.execute(
-                    "SELECT host, url, count(*) FROM flows GROUP BY host, url"
-                ):
+                # 逐行归并，不让 SQLite 按大量带不同 Query 的 URL 建临时排序表。
+                for host, url in db.execute("SELECT host, url FROM flows"):
                     key = self.directory_key(host, url)
                     if key:
-                        counts[key] += count
+                        counts[key] += 1
                 self.directory_cache[session_id] = counts
             return [
                 {"host": host, "path": path, "count": count}

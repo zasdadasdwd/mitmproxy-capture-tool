@@ -14,6 +14,17 @@ from urllib.parse import unquote, urlsplit
 from config import CONFIG_PATH, DATA, ROOT
 
 
+def _read_log_tail(path, limit=2000):
+    """仅读取代理日志末尾，避免长时间运行后把整个文件载入内存。"""
+    try:
+        with path.open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, stream.tell() - limit), os.SEEK_SET)
+            return stream.read(limit).decode(errors="replace").strip()
+    except FileNotFoundError:
+        return ""
+
+
 class EngineManager:
     """负责引擎进程、启动确认和采集通道，不直接处理 HTTP 参数。"""
 
@@ -68,56 +79,58 @@ class EngineManager:
         self.dropped_events = 0
         self.stopping = False
         self.token = secrets.token_hex(32)
-        self.socket_folder = tempfile.TemporaryDirectory(prefix="capture-")
-        socket_path = str(Path(self.socket_folder.name) / "events.sock")
-        self.server = await asyncio.start_unix_server(
-            self.receive, path=socket_path, limit=100 * 1024 * 1024
-        )
-        self.control_path = Path(self.socket_folder.name) / "recording.json"
-        self.control_path.write_text(json.dumps({"session_id": None, "sequence": 0}))
-        environment = dict(
-            os.environ,
-            CAPTURE_SETTINGS=str(CONFIG_PATH),
-            CAPTURE_SOCKET=socket_path,
-            CAPTURE_TOKEN=self.token,
-            CAPTURE_SESSION="",
-            CAPTURE_CONTROL=str(self.control_path),
-            CAPTURE_PARENT_PID=str(os.getpid()),
-            CAPTURE_BODY_ROOT=str(getattr(self.store, "root", DATA / "captures")),
-            CAPTURE_HOOK_MODULES=json.dumps(self.hook_modules),
-        )
-        self.log_file = (Path(self.socket_folder.name) / "engine.log").open("wb")
-        command = [
-            sys.executable,
-            "-c",
-            "from mitmproxy.tools.main import mitmdump; mitmdump()",
-            "--set",
-            "flow_detail=0",
-            "-s",
-            str(ROOT / "capture/engine/addon.py"),
-            "--listen-host",
-            settings.listen_host,
-            "--listen-port",
-            str(settings.listen_port),
-            "--set",
-            f"confdir={DATA / 'certificates'}",
-            "--set",
-            "connection_strategy=lazy",
-            "--set",
-            f"stream_large_bodies={settings.body_limit}",
-        ]
-        if settings.connection_mode == "upstream":
-            upstream = urlsplit(settings.upstream_proxy)
-            address = upstream._replace(
-                netloc=upstream.netloc.rsplit("@", 1)[-1]
-            ).geturl()
-            command.extend(["--mode", f"upstream:{address}"])
-            if upstream.username is not None:
-                auth = (
-                    f"{unquote(upstream.username)}:{unquote(upstream.password or '')}"
-                )
-                command.extend(["--set", f"upstream_auth={auth}"])
         try:
+            self.socket_folder = tempfile.TemporaryDirectory(prefix="capture-")
+            socket_path = str(Path(self.socket_folder.name) / "events.sock")
+            self.server = await asyncio.start_unix_server(
+                self.receive, path=socket_path, limit=100 * 1024 * 1024
+            )
+            self.control_path = Path(self.socket_folder.name) / "recording.json"
+            self.control_path.write_text(
+                json.dumps({"session_id": None, "sequence": 0})
+            )
+            environment = dict(
+                os.environ,
+                CAPTURE_SETTINGS=str(CONFIG_PATH),
+                CAPTURE_SOCKET=socket_path,
+                CAPTURE_TOKEN=self.token,
+                CAPTURE_SESSION="",
+                CAPTURE_CONTROL=str(self.control_path),
+                CAPTURE_PARENT_PID=str(os.getpid()),
+                CAPTURE_BODY_ROOT=str(getattr(self.store, "root", DATA / "captures")),
+                CAPTURE_HOOK_MODULES=json.dumps(self.hook_modules),
+            )
+            self.log_file = (Path(self.socket_folder.name) / "engine.log").open("wb")
+            command = [
+                sys.executable,
+                "-c",
+                "from mitmproxy.tools.main import mitmdump; mitmdump()",
+                "--set",
+                "flow_detail=0",
+                "-s",
+                str(ROOT / "capture/engine/addon.py"),
+                "--listen-host",
+                settings.listen_host,
+                "--listen-port",
+                str(settings.listen_port),
+                "--set",
+                f"confdir={DATA / 'certificates'}",
+                "--set",
+                "connection_strategy=lazy",
+                "--set",
+                f"stream_large_bodies={settings.body_limit}",
+            ]
+            if settings.connection_mode == "upstream":
+                upstream = urlsplit(settings.upstream_proxy)
+                address = upstream._replace(
+                    netloc=upstream.netloc.rsplit("@", 1)[-1]
+                ).geturl()
+                command.extend(["--mode", f"upstream:{address}"])
+                if upstream.username is not None:
+                    auth = (
+                        f"{unquote(upstream.username)}:{unquote(upstream.password or '')}"
+                    )
+                    command.extend(["--set", f"upstream_auth={auth}"])
             self.process = await asyncio.create_subprocess_exec(
                 *command,
                 env=environment,
@@ -131,6 +144,9 @@ class EngineManager:
             await asyncio.sleep(0.1)
             if not self.status()["running"]:
                 raise RuntimeError(self.error or "代理启动失败")
+        except asyncio.CancelledError:
+            await self.stop_process()
+            raise
         except Exception as exc:
             await self.stop_process()
             self.error = str(exc) or "代理启动超时"
@@ -207,9 +223,7 @@ class EngineManager:
         code = await process.wait()
         if not self.stopping:
             log = Path(self.socket_folder.name) / "engine.log"
-            tail = (
-                log.read_text(errors="replace")[-2000:].strip() if log.exists() else ""
-            )
+            tail = _read_log_tail(log)
             self.error = f"代理进程退出（{code}）" + (f"：{tail}" if tail else "")
             self.ready.set()
             await self.close_transport()

@@ -173,10 +173,7 @@ class LinkPage {
           : "capture-links.svg";
       a.click();
     };
-    $("linkTheme").onclick = () =>
-      applyTheme(
-        document.documentElement.dataset.theme === "dark" ? "light" : "dark",
-      );
+    initThemePicker($("linkTheme"));
     $("closeLinkDetail").onclick = () => $("linkDetailDialog").close();
     $("linkDetailPart").onchange = () => this.renderFullDetail();
     window.addEventListener("pagehide", () => {

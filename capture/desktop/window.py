@@ -102,12 +102,23 @@ class DesktopLinks:
         return webbrowser.open(url, new=2)
 
 
-def set_app_identity():
-    """WebKit 初始化后设置 Dock 名称与图标，不改变任何系统代理。"""
-    import AppKit
+def prepare_app_identity():
+    """在 Cocoa 注册应用前设置本进程的名称，避免 Dock 使用解释器的 Python 名称。"""
     import Foundation
 
+    bundle = Foundation.NSBundle.mainBundle()
+    # 只修改进程内的字典，不写共享 Python.app 的 Info.plist。
+    for info in (bundle.infoDictionary(), bundle.localizedInfoDictionary()):
+        if info is not None:
+            info["CFBundleName"] = "天机阁"
+            info["CFBundleDisplayName"] = "天机阁"
     Foundation.NSProcessInfo.processInfo().setProcessName_("天机阁")
+
+
+def set_app_identity():
+    """WebKit 初始化后在主线程设置 Dock 图标，不改变任何系统代理。"""
+    import AppKit
+
     icon = AppKit.NSImage.alloc().initWithContentsOfFile_(
         str(ROOT / "capture/web/favicon.png")
     )
@@ -127,6 +138,7 @@ def main():
     if not args.config.is_file():
         parser.error(f"启动配置不存在：{args.config}")
     try:
+        prepare_app_identity()
         import webview
     except ImportError:
         parser.error(

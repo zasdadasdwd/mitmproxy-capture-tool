@@ -3,12 +3,16 @@
 import argparse
 import base64
 import json
+import math
+import platform
+import sqlite3
 import statistics
 import tempfile
 import time
 import tracemalloc
 from pathlib import Path
 
+from capture.backend.filters import FlowFilters
 from capture.backend.storage import Store
 from config import Settings
 
@@ -26,6 +30,7 @@ def measure(function, repeats=12):
     return {
         "median_ms": round(statistics.median(samples), 3),
         "first_ms": round(samples[0], 3),
+        "p95_ms": round(sorted(samples)[math.ceil(len(samples) * .95) - 1], 3),
         "peak_kib": round(peak / 1024, 1),
     }
 
@@ -69,10 +74,23 @@ def main():
             },
         )
         result = {
+            "environment": {"python": platform.python_version(), "sqlite": sqlite3.sqlite_version, "platform": platform.system(), "timing_with_tracemalloc": True},
             "rows": 50000,
             "body_bytes": 8 * 1024 * 1024,
             "directories": measure(lambda: store.directories(session)),
             "preview": measure(lambda: store.get_flow(session, "large", preview=True)),
+            "list_first_page": measure(lambda: store.list_flows(session)),
+            "list_deep_page": measure(lambda: store.list_flows(session, offset=40000)),
+            "list_filtered": measure(lambda: store.list_flows(session, filters=FlowFilters(method="GET", status_code="200"))),
+            "list_sorted": measure(lambda: store.list_flows(session, filters=FlowFilters(sort_order="desc"))),
+        }
+        result["body_replacements"] = measure(lambda: store.save_flow(session, {
+            "id": "replace", "request": {"body_b64": "dGVzdA=="},
+        }), repeats=100)
+        result["cleanup"] = {
+            "body_files_after_100_replacements": len(list((store.root / session / "bodies").iterdir())),
+            "deleted": store.delete_flows(session, ["replace"]),
+            "body_files_after_delete": len(list((store.root / session / "bodies").iterdir())),
         }
         result["full_view"] = {
             "raw_json_bytes": len(
@@ -83,6 +101,7 @@ def main():
             ),
         }
         store.close()
+        result["cleanup"]["connections_after_close"] = len(store.connections)
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result))
 

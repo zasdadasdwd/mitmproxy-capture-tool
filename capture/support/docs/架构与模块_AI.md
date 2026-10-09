@@ -40,7 +40,7 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 | `engine/manager.py`、`addon.py`、`policy.py`、`hooks.py` | mitmdump 生命周期、事件采集、TLS/拒绝策略、Hook 执行链 | 代理转发和请求/响应修改 |
 | `plugins/base.py`、`plugins/hooks.py`、`hook_template.py` | `BaseHook` 注册表、内置示例、根目录空模板 | 第三方报文扩展 |
 | `agent_mcp/server.py`、`client.py`、`tools.py`、`audit.py` | MCP 协议适配、HTTP API 客户端、工具、审计 | Agent 接入 |
-| `web/*` | 原生 HTML/CSS/JS；`app.js` 主页面，`links*` 链路页，`request-viewer.js` 详情 | 浏览器交互 |
+| `web/*` | 原生 HTML/CSS/JS；`app.js` 主页面，`links*` 链路页，`request-viewer.js` 详情；`theme.js` 共享主题，`appearance-background.js` 本地背景存储与生命周期 | 浏览器交互 |
 | `support/tests/*`、`support/docs/*` | 自动化验证与维护文档 | 行为变更时补测试/文档 |
 
 请求详情的展示规则集中在 `app.js` 的 `detailPresentation`、`renderDetail` 与 `setDetailSection`：仅决定默认标签、语义颜色、折叠与滚动状态，不能据此改写报文或传输行为。分体重放和更多菜单保留原按钮 ID；新增操作浮层需纳入 `dismissFloatingMenus`，正文折叠与 JSON 树不属于操作浮层。侧栏不初始化上下伸缩，完整查看仍保留数据区伸缩；宽度调整由 `detail-resizer.js` 管理。

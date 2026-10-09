@@ -1,11 +1,34 @@
 """窗口入口生命周期测试：复用服务与自建服务拥有不同退出责任。"""
 
+import sys
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 from capture.desktop.window import DesktopBackend
 from config import ROOT
+
+
+@pytest.mark.parametrize("localized", [None, {"CFBundleName": "Python"}])
+def test_app_identity_updates_bundle_before_cocoa(monkeypatch, localized):
+    """Dock 名称来自主 bundle；本地化名称存在时也要一致。"""
+    from capture.desktop.window import prepare_app_identity
+
+    info = {"CFBundleName": "Python"}
+    bundle = Mock()
+    bundle.infoDictionary.return_value = info
+    bundle.localizedInfoDictionary.return_value = localized
+    process = Mock()
+    monkeypatch.setitem(sys.modules, "Foundation", SimpleNamespace(
+        NSBundle=SimpleNamespace(mainBundle=lambda: bundle),
+        NSProcessInfo=SimpleNamespace(processInfo=lambda: process),
+    ))
+    prepare_app_identity()
+    assert info["CFBundleName"] == info["CFBundleDisplayName"] == "天机阁"
+    if localized is not None:
+        assert localized["CFBundleName"] == localized["CFBundleDisplayName"] == "天机阁"
+    process.setProcessName_.assert_called_once_with("天机阁")
 
 
 def backend_with_status(status):

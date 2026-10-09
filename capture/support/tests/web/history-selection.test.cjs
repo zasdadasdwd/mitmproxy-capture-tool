@@ -8,7 +8,7 @@ function setup(){
  function el(){return {value:'',checked:false,disabled:false,style:{},dataset:{},children:[],append(...x){this.children.push(...x)},replaceChildren(){this.children=[]},setAttribute(){},showModal(){this.open=true},close(){this.open=false},focus(){}}}
  const items=[{id:'a',kind:'capture',count:2,disk_bytes:20,status:'stopped'},{id:'b',kind:'replay',count:1,disk_bytes:10,status:'stopped'}];
  const calls=[];let fail=null;
- const ctx=vm.createContext({document:{getElementById(id){if(!els.has(id))els.set(id,el());return els.get(id)},createElement:el},fetch:async(path,options)=>{if(options?.method==='DELETE'){calls.push(path);if(path.endsWith(fail))return {ok:false,text:async()=> 'failed'};items.splice(items.findIndex(x=>path.endsWith(x.id)),1)}return {ok:true,json:async()=>items}},setTimeout(){},clearTimeout(){},applyTheme(){}});
+ const ctx=vm.createContext({document:{getElementById(id){if(!els.has(id))els.set(id,el());return els.get(id)},createElement:el},fetch:async(path,options)=>{if(options?.method==='DELETE'){calls.push(path);if(path.endsWith(fail))return {ok:false,text:async()=> 'failed'};items.splice(items.findIndex(x=>path.endsWith(x.id)),1)}return {ok:true,json:async()=>items}},setTimeout(){},clearTimeout(){},applyTheme(){},initThemePicker(){}});
  vm.runInContext(source.replace('action(refresh)();',''),ctx);
  return {ctx,els,calls,fail(v){fail=v},run(s){return vm.runInContext(s,ctx)}};
 }

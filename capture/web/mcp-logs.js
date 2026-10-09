@@ -72,7 +72,7 @@ $("logPause").addEventListener("click", () => {
   $("logPause").textContent = paused ? "继续更新" : "暂停更新";
   connectLogs();
 });
-$("logTheme").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+initThemePicker($("logTheme"));
 document.addEventListener("visibilitychange", connectLogs);
 window.addEventListener("pagehide", () => stream?.close());
 connectLogs();

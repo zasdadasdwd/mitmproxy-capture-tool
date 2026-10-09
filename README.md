@@ -54,11 +54,13 @@ python3 -m venv .venv
 | MCP | 22 个工具：状态诊断、结构化 AND/OR、参数追踪、对比、代码复制、WebSocket 消息读取、重放记录只读检索、记录控制与删除；配套 Skill、指南资源与模板 |
 | 数据管理 | 独立 SQLite 会话、历史检索、会话 ZIP 下载；抓包中删除/清空且迟到响应不复活记录 |
 | 导出 | cURL、Python/httpx、Python/requests、HAR、CSV、JSON |
-| 界面 | 黑白主题、实时刷新、固定表头、可伸缩侧栏与详情面板、窄窗口适配、WebSocket 消息分页面板及 SSE 事件预览 |
+| 界面 | 五套完整主题、本地静态／动态背景及可见程度、实时刷新、固定表头、可伸缩侧栏与详情面板、窄窗口适配、WebSocket 消息分页面板及 SSE 事件预览 |
 
 多条件筛选通过子组明确括号优先级，每组选择 AND 或 OR。参数全文搜索由链路分析页面提供，列表快速搜索及多条件筛选也支持请求和响应正文。
 
 参数匹配和时序关系用于提供分析证据，候选来源需要开发者结合业务核实；加密后的参数也可能由客户端本地计算产生。
+
+外观在“设置 → 外观与偏好”调整；背景图片仅保存在当前浏览器本机。详见 [外观设置说明](capture/support/docs/外观设置.md)。
 
 ## macOS 窗口启动
 
@@ -70,6 +72,8 @@ python app_main.py
 ```
 
 窗口使用系统 WebKit，不启动浏览器；设置、重放、分析、证书安装与下载仍使用原来的功能。第三方 Hook 继续在项目环境中开发，并通过 `startup.toml` 注册。自定义启动配置可使用 `app_main.py --config 路径`。
+
+macOS Dock 显示名称为“天机阁”。名称在 Cocoa 初始化前设置，仅修改当前进程的应用信息，不修改系统 Python；已打开的旧窗口需要下次启动 App 才生效。若窗口自建了抓包服务，请先停止记录，再退出窗口。
 
 生成 Finder 双击启动器：
 
@@ -242,6 +246,7 @@ mitmproxy-capture-tool/
 
 - [更新日志](capture/support/docs/更新日志.md)
 - [开发规范（Agent、UI、功能、代码）](capture/support/docs/开发规范.md)
+- [性能测试与资源回收](capture/support/docs/性能优化.md)
 - [Agent 约束](capture/AGENTS.md)
 - [Proxyman 功能差距与开发顺序](capture/support/docs/Proxyman功能差距与开发顺序.md)
 
