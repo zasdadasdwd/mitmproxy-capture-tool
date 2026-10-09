@@ -80,6 +80,7 @@ function initThemePicker(button) {
     const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + delta + items.length) % items.length;
     items[next].focus();
   });
+  if (typeof FloatingPanels === "undefined") {
   document.addEventListener("pointerdown", event => { if (!wrapper.contains(event.target)) close(); }, true);
   document.addEventListener("click", event => { if (!wrapper.contains(event.target)) close(); }, true);
   document.addEventListener("appearance-menu-open", close);
@@ -88,6 +89,7 @@ function initThemePicker(button) {
       close(); button.focus(); event.preventDefault(); event.stopImmediatePropagation();
     }
   }, true);
+  }
   document.addEventListener("appearance-theme-change", sync);
   sync();
 }

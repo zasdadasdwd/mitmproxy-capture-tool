@@ -1454,11 +1454,21 @@ function dismissFloatingMenus(target = null) {
   return dismissed;
 }
 // 捕获阶段避免表格拖动等控件阻止冒泡；click 同时覆盖键盘触发。
+// 原生 details 的开关同步到触发器，辅助技术与 CSS 箭头共用展开状态。
+for (const menu of document.querySelectorAll(".detail-policy-actions")) {
+  const trigger = menu.querySelector("summary");
+  menu.addEventListener("toggle", () => trigger.setAttribute("aria-expanded", String(menu.open)));
+}
+if (typeof FloatingPanels === "undefined") {
 for (const type of ["pointerdown", "click"])
   document.addEventListener(type, (event) => dismissFloatingMenus(event.target), true);
+}
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  if (typeof FloatingPanels !== "undefined" && FloatingPanels.hasOpen()) return;
+  const policyTrigger = document.querySelector(".detail-policy-actions[open] > summary");
   if (dismissFloatingMenus()) {
+    policyTrigger?.focus?.();
     event.preventDefault();
     event.stopPropagation();
   } else if (!document.querySelector("dialog[open]")) $("closeDetail").click();

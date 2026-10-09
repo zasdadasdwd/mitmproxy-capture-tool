@@ -1,0 +1,245 @@
+{
+  "environment": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "browser": "Codex In-app Browser; exact engine version not collected",
+    "viewport": [
+      1280,
+      800
+    ],
+    "instrumentation": "temporary local fixture; bounded requestAnimationFrame samples, PerformanceObserver longtask, performance.memory, object URL counters",
+    "synthetic_rows": {
+      "first_run": 5,
+      "second_run": 5000,
+      "page_size": 200
+    }
+  },
+  "operations": {
+    "detail_and_policy_menu_rounds": 30,
+    "additional_policy_menu_rounds": 50,
+    "play_pause_rounds": 20,
+    "background_replacement_attempts": 12,
+    "sequential_confirmed_replacements": 6,
+    "large_list_scroll_down_up_rounds_per_mode": 5,
+    "large_list_page_next_previous_rounds_with_animation": 5
+  },
+  "samples": {
+    "baseline": {
+      "t": 15049.59999999404,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.69999999999891,
+      "p95": 17.600000000000364,
+      "max": 17.799999999999272,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 0,
+      "urlCreated": 0,
+      "urlRevoked": 0,
+      "nodes": 871,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 14269548,
+        "total": 22083116
+      }
+    },
+    "playingSettings": {
+      "t": 48049.40000000596,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.69999999999709,
+      "p95": 16.80000000000291,
+      "max": 17.80000000000291,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 2,
+      "urlCreated": 2,
+      "urlRevoked": 0,
+      "nodes": 878,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 12486213,
+        "total": 13424201
+      }
+    },
+    "after30": {
+      "t": 89048.90000000596,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.69999999999709,
+      "p95": 17.59999999999127,
+      "max": 17.80000000000291,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 2,
+      "urlCreated": 2,
+      "urlRevoked": 0,
+      "nodes": 863,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 13950412,
+        "total": 15263852
+      }
+    },
+    "paused": {
+      "t": 104048.70000001788,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.69999999999709,
+      "p95": 17.59999999999127,
+      "max": 17.70000000001164,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 1,
+      "urlCreated": 2,
+      "urlRevoked": 1,
+      "nodes": 863,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 15085621,
+        "total": 17362921
+      }
+    },
+    "after20Playback": {
+      "t": 133049,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.69999999999709,
+      "p95": 17.60000000000582,
+      "max": 17.70000000001164,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 1,
+      "urlCreated": 22,
+      "urlRevoked": 21,
+      "nodes": 863,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 14138828,
+        "total": 15022324
+      }
+    },
+    "afterReplacements": {
+      "t": 209047.70000001788,
+      "frameWindowSeconds": 10,
+      "samples": 601,
+      "p50": 16.699999999982538,
+      "p95": 17.60000000000582,
+      "max": 17.70000000001164,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 1,
+      "urlCreated": 36,
+      "urlRevoked": 35,
+      "nodes": 863,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 17843516,
+        "total": 21829040
+      }
+    },
+    "afterRemoval": {
+      "t": 240047.80000001192,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.699999999982538,
+      "p95": 16.79999999998836,
+      "max": 17.70000000001164,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 0,
+      "urlCreated": 41,
+      "urlRevoked": 41,
+      "nodes": 863,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 19376482,
+        "total": 27858994
+      }
+    },
+    "after50MoreMenus": {
+      "t": 280048,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.70000000001164,
+      "p95": 16.79999999998836,
+      "max": 17.600000000034925,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 0,
+      "urlCreated": 41,
+      "urlRevoked": 41,
+      "nodes": 863,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 17286188,
+        "total": 19198196
+      }
+    },
+    "largeNoAnimation": {
+      "t": 17044.40000000596,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.69999999999891,
+      "p95": 16.80000000000109,
+      "max": 17.700000000000728,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 0,
+      "urlCreated": 0,
+      "urlRevoked": 0,
+      "nodes": 3336,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 19305096,
+        "total": 36234904
+      }
+    },
+    "largePlaying": {
+      "t": 50044.79999998212,
+      "frameWindowSeconds": 10,
+      "samples": 600,
+      "p50": 16.69999999999709,
+      "p95": 17.60000000000582,
+      "max": 17.80000000000291,
+      "over50": 0,
+      "longTaskSupported": true,
+      "longTasks": [],
+      "urls": 2,
+      "urlCreated": 2,
+      "urlRevoked": 0,
+      "nodes": 3343,
+      "hidden": false,
+      "visibility": [],
+      "memory": {
+        "used": 15607512,
+        "total": 17629608
+      }
+    }
+  },
+  "limitations": [
+    "10-second rolling frame windows, not an entire-session presentation trace",
+    "rAF frame intervals do not measure animated-image decoded frame presentation or GPU load",
+    "JS heap only; process RSS, decoded image memory and GPU memory not measured",
+    "No real document.hidden=true in this browser; hidden/resume covered by mock tests only",
+    "No long-running real capture or packaged PyWebView benchmark",
+    "Fixture only; no real business requests sent"
+  ]
+}

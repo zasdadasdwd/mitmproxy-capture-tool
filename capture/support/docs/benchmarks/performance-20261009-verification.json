@@ -1,0 +1,62 @@
+{
+  "environment": {
+    "python": "3.12.10",
+    "sqlite": "3.49.1",
+    "platform": "Darwin",
+    "timing_with_tracemalloc": true
+  },
+  "rows": 50000,
+  "body_bytes": 8388608,
+  "directories": {
+    "median_ms": 0.219,
+    "first_ms": 141.744,
+    "p95_ms": 141.744,
+    "peak_kib": 16.8
+  },
+  "preview": {
+    "median_ms": 0.33,
+    "first_ms": 1.192,
+    "p95_ms": 1.192,
+    "peak_kib": 200.5
+  },
+  "list_first_page": {
+    "median_ms": 3.599,
+    "first_ms": 3.654,
+    "p95_ms": 6.956,
+    "peak_kib": 172.8
+  },
+  "list_deep_page": {
+    "median_ms": 4.851,
+    "first_ms": 4.68,
+    "p95_ms": 7.682,
+    "peak_kib": 143.7
+  },
+  "list_filtered": {
+    "median_ms": 47.344,
+    "first_ms": 46.866,
+    "p95_ms": 56.949,
+    "peak_kib": 146.1
+  },
+  "list_sorted": {
+    "median_ms": 3.31,
+    "first_ms": 3.533,
+    "p95_ms": 3.533,
+    "peak_kib": 144.5
+  },
+  "body_replacements": {
+    "median_ms": 0.835,
+    "first_ms": 1.055,
+    "p95_ms": 1.102,
+    "peak_kib": 32.7
+  },
+  "cleanup": {
+    "body_files_after_100_replacements": 2,
+    "deleted": 1,
+    "body_files_after_delete": 1,
+    "connections_after_close": 0
+  },
+  "full_view": {
+    "raw_json_bytes": 30758402,
+    "text_json_bytes": 8388743
+  }
+}
