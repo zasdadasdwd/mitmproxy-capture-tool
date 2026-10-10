@@ -1666,20 +1666,32 @@ let macCertificateInstalling = false;
 /** 安装只在用户点击时发起，等待钥匙串授权期间阻止重复提交。 */
 $("installMacCertificate").onclick = action(async () => {
   const button = $("installMacCertificate");
+  if (macCertificateInstalling) return;
   macCertificateInstalling = true;
   button.disabled = true;
   button.textContent = "等待系统授权…";
-  $("macCertificateStatus").textContent = "请查看 macOS 的授权窗口，确认当前 CA 的安装与 SSL 信任。";
+  $("macCertificateStatus").textContent = "正在安装并检查信任状态，请查看 macOS 授权窗口。";
+  toast("正在安装证书，请确认 macOS 授权窗口。");
   try {
     const result = await json("/api/certificate/macos/install", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sha256: button.dataset.sha256 }),
+      ...(typeof AbortSignal !== "undefined" && AbortSignal.timeout ? { signal: AbortSignal.timeout(150000) } : {}),
     });
-    $("macCertificateStatus").textContent = result.message + "。请重新建立客户端连接。";
+    const message = result.trusted === true
+      ? (result.message || "已确认当前 CA 的 SSL 信任") + "。请重新建立客户端连接。"
+      : result.trusted === false || result.trusted === null
+        ? result.message || "未确认 SSL 信任，请在钥匙串中手动确认后重新安装检查。"
+        : "安装命令已返回，但当前服务未提供信任验证结果；请检查钥匙串或更新并重启工作台。";
+    $("macCertificateStatus").textContent = message;
+    toast(message);
   } catch (error) {
-    $("macCertificateStatus").textContent = error.message;
-    throw error;
+    const message = error.name === "TimeoutError"
+      ? "等待安装结果超时，请检查 macOS 授权窗口和钥匙串；暂未确认安装或信任成功。"
+      : "安装未确认成功：" + error.message;
+    $("macCertificateStatus").textContent = message;
+    toast(message);
   } finally {
     macCertificateInstalling = false;
     button.disabled = false;

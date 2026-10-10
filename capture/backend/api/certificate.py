@@ -40,21 +40,17 @@ async def install_macos_certificate(body: CertificateInstall, request: Request):
         raise HTTPException(409, "正在等待系统授权，请勿重复安装")
     try:
         async with install_lock:
-            fingerprint = await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 MacCertificateInstaller(
                     DATA / "certificates/mitmproxy-ca-cert.pem"
-                ).install,
+                ).install_with_feedback,
                 body.sha256,
             )
     except FileNotFoundError as exc:
         raise HTTPException(404, "CA 尚未生成，请先启动代理") from exc
     except (ValueError, OSError, x509.ExtensionNotFound) as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {
-        "installed": True,
-        "sha256": fingerprint,
-        "message": "已安装到登录钥匙串，并设为当前用户 SSL 信任",
-    }
+    return result
 
 
 @router.get("/api/certificate")
