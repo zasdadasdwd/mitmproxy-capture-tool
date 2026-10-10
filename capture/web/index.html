@@ -6,8 +6,9 @@
     <title>流量工作台 · 天机阁</title>
     <link rel="icon" type="image/png" href="/favicon.png?v=20261004" />
     <script src="/floating-panels.js?v=20261009-ui-qa"></script>
-    <script src="/theme.js?v=20261009-boundaries"></script>
-    <link rel="stylesheet" href="/style.css?v=20261009-boundaries" />
+    <script src="/desktop-appearance.js?v=20261010-appearance-gallery-r3"></script>
+    <script src="/theme.js?v=20261010-desktop-appearance"></script>
+    <link rel="stylesheet" href="/style.css?v=20261010-native-gallery" />
   </head>
   <body>
     <header>
@@ -561,10 +562,11 @@
                 <select id="settingsTheme" hidden aria-label="外观主题"><option value="light">白色</option><option value="dark">黑色</option><option value="ocean">深海蓝</option><option value="paper">暖纸色</option><option value="graphite">石墨紫</option></select>
               </div>
               <div class="appearance-background-section">
-                <strong>自定义背景</strong><p class="settings-note">仅保存在当前浏览器本机，支持 PNG、JPEG、WebP、GIF；最多 20 MiB、1600 万像素。UI 面板透明度可独立调整，文字与按钮不受影响。</p>
+                <strong>自定义背景</strong><p class="settings-note">背景保存在当前浏览器或桌面应用本机，支持 PNG、JPEG、WebP、GIF；最多 20 MiB、1600 万像素。UI 面板透明度可独立调整，文字与按钮不受影响。</p>
                 <p class="settings-note">内置背景「随风眨眼」默认关闭，点击启用后可调整透明度和动画。</p>
                 <button id="appearanceBackgroundBuiltin" type="button" aria-pressed="false">启用内置背景 · 随风眨眼</button>
-                <div class="appearance-background-actions"><label class="background-file-button" for="appearanceBackgroundFile">上传 / 替换背景<input id="appearanceBackgroundFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label><button id="appearanceBackgroundRemove" type="button" disabled>移除背景</button></div>
+                <div class="appearance-background-actions"><label class="background-file-button" for="appearanceBackgroundFile">上传 / 替换背景<input id="appearanceBackgroundFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label><button id="appearanceBackgroundRemove" type="button" disabled>关闭背景</button></div>
+                <div class="appearance-gallery-row"><label for="appearanceBackgroundGallery">背景选择</label><select id="appearanceBackgroundGallery" aria-label="选择已保存背景"><option value="">关闭背景</option></select><button id="appearanceBackgroundDelete" type="button" disabled>删除图库项</button></div>
                 <div class="appearance-opacity-row"><label for="appearanceBackgroundOpacity">图片可见程度</label><input id="appearanceBackgroundOpacity" type="range" min="0" max="100" value="30" disabled /><output id="appearanceBackgroundPercent" for="appearanceBackgroundOpacity">30%</output></div>
                 <div class="appearance-opacity-row"><label for="appearanceUiTransparency">UI 透明度</label><input id="appearanceUiTransparency" type="range" min="0" max="100" value="20" disabled /><output id="appearanceUiTransparencyPercent" for="appearanceUiTransparency">20%</output></div>
                 <p class="appearance-opacity-note">0% 为实色面板，100% 完全透明；仅改变面板底色，菜单和弹窗保持实色。</p>
@@ -1042,7 +1044,7 @@
     <script src="/app.js?v=20261010-certificate-feedback"></script>
     <script src="/detail-resizer.js?v=20261001-fine-resize"></script>
     <script src="/table-resizer.js?v=20261009-compact-list"></script>
-    <script src="/appearance-background.js?v=20261009-ui-transparency"></script>
+    <script src="/appearance-background.js?v=20261010-appearance-gallery-r3"></script>
   <script>initAppearanceBackground();</script>
 </body>
 </html>

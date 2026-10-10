@@ -85,7 +85,7 @@ test("GIF framing retains only the first image and appends trailer", () => {
 test("initialization restores without rewriting IndexedDB, enables controls, then deletes saved background", async () => {
   const previous = { document: globalThis.document, window: globalThis.window, indexedDB: globalThis.indexedDB,
     localStorage: globalThis.localStorage, fetch: globalThis.fetch, Image: globalThis.Image, URL: globalThis.URL };
-  const store = { current: { staticBlob: new Blob([new Uint8Array([1])], { type: "image/png" }), animatedBlob: null } };
+  const store = { current: { staticBlob: new Blob([new Uint8Array([1])], { type: "image/png" }), animatedBlob: null }, records: new Map() };
   let puts = 0, deletes = 0, ids = 0, fetches = 0, failPut = false, abortPutAfterSuccess = false; const revoked = [], windowListeners = {}, documentListeners = {}, mediaListeners = [], images = [];
   class Element {
     constructor(tag = "div") { this.tagName = tag; this.style = {setProperty(k,v){this[k]=v;}}; this.dataset = {}; this.attributes = {}; this.listeners = {}; this.children = []; this.value = ""; this.disabled = false; this.hidden = false; this.checked = false; }
@@ -93,9 +93,11 @@ test("initialization restores without rewriting IndexedDB, enables controls, the
     addEventListener(k, cb) { (this.listeners[k] ||= []).push(cb); }
     async emit(k, event = {}) { for (const cb of this.listeners[k] || []) await cb(event); }
     prepend(el) { this.children.unshift(el); }
+    append(el) { this.children.push(el); }
+    replaceChildren() { this.children = []; }
   }
   const els = new Map();
-  for (const id of ["appearanceUiTransparency", "appearanceUiTransparencyPercent", "appearanceBackgroundBuiltin", "appearanceBackgroundFile", "appearanceBackgroundRemove", "appearanceBackgroundOpacity", "appearanceBackgroundPercent", "appearanceBackgroundAnimation", "appearanceBackgroundAnimationRow", "appearanceBackgroundStatus"]) els.set(id, new Element());
+  for (const id of ["appearanceBackgroundGallery", "appearanceBackgroundDelete", "appearanceUiTransparency", "appearanceUiTransparencyPercent", "appearanceBackgroundBuiltin", "appearanceBackgroundFile", "appearanceBackgroundRemove", "appearanceBackgroundOpacity", "appearanceBackgroundPercent", "appearanceBackgroundAnimation", "appearanceBackgroundAnimationRow", "appearanceBackgroundStatus"]) els.set(id, new Element());
   const document = { body: new Element("body"), documentElement: new Element("html"), hidden: false,
     getElementById: id => els.get(id) || null, createElement: tag => new Element(tag), addEventListener(k, cb) { documentListeners[k] = cb; } };
   const media = { matches: false, addEventListener(k, cb) { mediaListeners.push(cb); } };
@@ -108,19 +110,20 @@ test("initialization restores without rewriting IndexedDB, enables controls, the
   }
   const URL = { createObjectURL: () => `blob:test-${++ids}`, revokeObjectURL: url => revoked.push(url) };
   const tx = () => ({ objectStore: () => ({
-    get: () => req(() => store.current),
-    put: value => {
+    get: key => req(() => key === "current" ? store.current : store.records.get(key)),
+    getAll: () => req(() => [...store.records.values(), ...(store.current ? [store.current] : [])]),
+    put: (value, key = "current") => {
       puts++;
       const previousValue = store.current;
-      if (!failPut && !abortPutAfterSuccess) store.current = value;
+      if (!failPut && !abortPutAfterSuccess) { if (key === "current") store.current = value; else store.records.set(key, value); }
       const request = {};
       queueMicrotask(() => {
-        if (failPut) { request.error = new Error("quota failure"); request.onerror?.(); queueMicrotask(() => currentTx.onabort?.()); }
+        if (failPut) { request.error = new Error("quota failure"); request.onerror?.(); queueMicrotask(() => { store.current = previousValue; currentTx.onabort?.(); }); }
         else { request.result = undefined; request.onsuccess?.(); queueMicrotask(() => { if (abortPutAfterSuccess) store.current = previousValue; if (abortPutAfterSuccess) currentTx.onabort?.(); else currentTx.oncomplete?.(); }); }
       });
       return request;
     },
-    delete: () => { deletes++; store.current = undefined; return req(() => undefined); },
+    delete: key => { deletes++; if(key === "current")store.current = undefined;else store.records.delete(key); return req(() => undefined); },
   }), oncomplete: null, onabort: null, onerror: null });
   function req(result) {
     const request = {};
@@ -148,7 +151,11 @@ test("initialization restores without rewriting IndexedDB, enables controls, the
     assert.equal(document.documentElement.style["--ui-panel-alpha"], "40%");
     assert.equal(document.body.children[0].style.opacity, imageOpacity, "UI transparency does not affect the image visibility");
     assert.equal(els.get("appearanceUiTransparencyPercent").value, "60%");
-    assert.equal(puts, 0, "restore does not write the database again");
+    assert.equal(puts, 2, "legacy current background migrates once into an independent gallery item and selection pointer");
+    assert.match(store.current.id, /^browser-/);
+    assert.equal(store.current.name, "旧背景");
+    assert.equal(store.records.get(store.current.id).name, "旧背景", "legacy image is retained as a selectable gallery item");
+    assert.equal(els.get("appearanceBackgroundGallery").children.length, 2, "active pointer and gallery record represent one selectable image");
     assert.equal(els.get("appearanceBackgroundRemove").disabled, false);
     assert.equal(els.get("appearanceBackgroundOpacity").disabled, false);
     assert.equal(document.body.children[0].id, "appearanceBackgroundLayer");
@@ -186,15 +193,16 @@ test("initialization restores without rewriting IndexedDB, enables controls, the
     assert.equal(els.get("appearanceUiTransparency").disabled, true);
     assert.equal(document.documentElement.dataset.backgroundVisible, "false");
     assert.equal(els.get("appearanceBackgroundRemove").disabled, true);
-    assert.match(els.get("appearanceBackgroundStatus").textContent, /已删除/);
+    assert.match(els.get("appearanceBackgroundStatus").textContent, /已关闭/);
 
     const still = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64");
     const frameStart = still.indexOf(0x2c), frame = still.subarray(frameStart, still.length - 1);
     const gif = Buffer.concat([still.subarray(0, still.length - 1), frame, Buffer.from([0x3b])]);
     const backing = gif.buffer.slice(gif.byteOffset, gif.byteOffset + gif.byteLength);
-    els.get("appearanceBackgroundFile").files = [{ size: gif.length, arrayBuffer: async () => backing }];
+    els.get("appearanceBackgroundFile").files = [{ name: "wallpaper.gif", size: gif.length, arrayBuffer: async () => backing }];
     await els.get("appearanceBackgroundFile").emit("change");
-    assert.equal(puts, 3, "two failed writes and one successful upload were attempted");
+    assert.equal(puts, 8, "legacy migration plus two failed writes and one successful upload each write a gallery item and selection record");
+    assert.equal(store.current.name, "wallpaper.gif", "browser gallery entries retain the uploaded filename");
     assert.equal(els.get("appearanceBackgroundFile").value, "");
     assert.equal(els.get("appearanceBackgroundRemove").disabled, false);
     assert.equal(els.get("appearanceBackgroundAnimationRow").hidden, false);

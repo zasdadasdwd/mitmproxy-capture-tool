@@ -221,7 +221,7 @@
   function openDb() {
     return new Promise((resolve, reject) => {
       if (!globalThis.indexedDB) return reject(new Error("浏览器 IndexedDB 不可用"));
-      const req = indexedDB.open(DB_NAME, 1);
+      const req = indexedDB.open(DB_NAME, 2);
       req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE); };
       req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error || new Error("打开背景存储失败"));
     });
@@ -230,11 +230,25 @@
   async function dbRequest(mode, action, value) {
     const db = await openDb();
     try { return await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, mode), store = tx.objectStore(STORE), req = action === "put" ? store.put(value, "current") : action === "delete" ? store.delete("current") : store.get("current");
-      let result;
-      req.onsuccess = () => { result = req.result; };
-      req.onerror = () => reject(req.error || new Error("背景存储请求失败"));
-      tx.oncomplete = () => resolve(result);
+      const tx = db.transaction(STORE, mode), store = tx.objectStore(STORE); let result, req, generatedId;
+      if(action === "put") {
+        generatedId=`browser-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+        store.put({...value,id:generatedId},generatedId); req=store.put({...value,id:generatedId},"current");
+      } else if(action === "delete") req=store.delete("current");
+      else if(action === "deleteById") { store.delete(value); req=store.get("current"); req.onsuccess=()=>{const current=req.result;if(current?.id===value)store.delete("current");}; }
+      else if(action === "select") { if(value) { req=store.get(value); req.onsuccess=()=>{result=req.result;if(result)store.put(result,"current");}; } else req=store.delete("current"); }
+      else if(action === "migrateCurrent") {
+        req=store.get("current");
+        req.onsuccess=()=>{const current=req.result;if(current && !current.id){generatedId=`browser-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;result=current instanceof Blob?{staticBlob:current,id:generatedId,name:"旧背景"}:{...current,id:generatedId,name:current.name || "旧背景"};store.put(result,generatedId);store.put(result,"current");}else result=current;};
+      }
+      else if(action === "list") req=store.getAll ? store.getAll() : store.get("current");
+      else req=store.get("current");
+      if(req && action === "deleteById") req.onsuccess = () => { const current=req.result; result=current; if(current?.id===value)store.delete("current"); };
+      else if(req && action === "select") req.onsuccess = () => { result=req.result; if(result)store.put(result,"current"); };
+      else if(req && action === "migrateCurrent") { /* The migration handler persists both the item and active pointer. */ }
+      else if(req) req.onsuccess = () => { result = req.result; };
+      if(req) req.onerror = () => reject(req.error || new Error("背景存储请求失败"));
+      tx.oncomplete = () => resolve(action === "put" ? {id: generatedId} : result);
       tx.onabort = () => reject(tx.error || new Error("背景存储事务失败"));
       tx.onerror = () => reject(tx.error || new Error("背景存储事务失败"));
     }); } finally { db.close(); }
@@ -250,11 +264,12 @@
     if (!layer) { layer = document.createElement("img"); layer.id = "appearanceBackgroundLayer"; document.body.prepend(layer); }
     Object.assign(layer.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", objectFit: "cover", zIndex: "0", pointerEvents: "none", opacity: "0.3", display: "none" });
     layer.alt = ""; layer.setAttribute("aria-hidden", "true");
-    const builtinButton = get("appearanceBackgroundBuiltin");
+    const builtinButton = get("appearanceBackgroundBuiltin"), gallery = get("appearanceBackgroundGallery"), deleteGallery = get("appearanceBackgroundDelete");
     const uiOpacity = get("appearanceUiTransparency"), uiPercent = get("appearanceUiTransparencyPercent");
     const fileInput = get("appearanceBackgroundFile"), removeButton = get("appearanceBackgroundRemove"), opacity = get("appearanceBackgroundOpacity"), percent = get("appearanceBackgroundPercent"), animation = get("appearanceBackgroundAnimation"), animationRow = get("appearanceBackgroundAnimationRow"), status = get("appearanceBackgroundStatus");
     const say = message => { if (status) status.textContent = message; };
-    let selected = null, liveUrl = null, staticUrl = null, animationFrameUrl = null, generation = 0, shown = false;
+    document.addEventListener("desktop-appearance-error", event => say(`桌面外观操作失败：${event.detail?.message || event.detail || "未知错误"}`));
+    let selected = null, liveUrl = null, staticUrl = null, animationFrameUrl = null, generation = 0, shown = false, touched = false;
     let uiTransparency = 20;
     let alpha = 30, animationSetting = null, animationOn = false, visible = !document.hidden, reduced = false;
     try { reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { /* Optional browser preference. */ }
@@ -276,7 +291,25 @@
     if (removeButton) removeButton.disabled = true;
     if (opacity) opacity.disabled = true;
     if (animation) animation.disabled = true;
-    function savePrefs() { try { const value = { opacity: alpha, uiTransparency }; if (animationSetting !== null) value.animation = animationSetting; localStorage.setItem(META_KEY, JSON.stringify(value)); } catch { say("偏好设置无法保存；当前显示仍有效。"); } }
+    function savePrefs() { if(!window.DesktopAppearance?.active) try { const value = { opacity: alpha, uiTransparency }; if (animationSetting !== null) value.animation = animationSetting; localStorage.setItem(META_KEY, JSON.stringify(value)); } catch { say("偏好设置无法保存；当前显示仍有效。"); } saveSettings({opacity: alpha, uiTransparency, ...(animationSetting === null ? {} : {animation: animationSetting})}); }
+    function saveSettings(patch) { window.DesktopAppearance?.save(patch); }
+    function fromBase64(value, mime) { const raw = atob(value); const bytes = new Uint8Array(raw.length); for (let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i); return new Blob([bytes], {type:mime || "application/octet-stream"}); }
+    function toBase64(blob) { return new Promise((resolve,reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(reader.error || new Error("图片读取失败")); reader.readAsDataURL(blob); }); }
+    async function renderGallery(entries, selectedId) {
+      if (!gallery) return;
+      gallery.replaceChildren(); const off = document.createElement("option"); off.value = ""; off.textContent = "关闭背景"; gallery.append(off);
+      const unique = new Map((entries || []).map(entry=>[entry.id,entry]));
+      for (const entry of unique.values()) { const option=document.createElement("option"); option.value=entry.id; option.textContent=entry.name || "未命名背景"; gallery.append(option); }
+      gallery.value = selectedId || "";
+      if (deleteGallery) deleteGallery.disabled = !gallery.value || !!entries?.find(entry=>entry.id===gallery.value)?.builtin;
+    }
+    async function applyDesktopPayload(payload, token) {
+      if (!payload?.static_b64) return false;
+      const stat=fromBase64(payload.static_b64,payload.static_mime), anim=payload.animated_b64 ? fromBase64(payload.animated_b64,payload.animated_mime) : null;
+      const ok=await useBlob(stat,anim,token,false,payload.builtin ? BUILTIN.id : null);
+      if(ok){selected.id=payload.id;selected.builtin=payload.builtin || null;if(gallery)gallery.value=payload.id || "";if(deleteGallery)deleteGallery.disabled=!payload.id || !!payload.builtin;}
+      return ok;
+    }
     /** Detaches the current source and releases the transient animation URL. */
     function stop() {
       layer.removeAttribute("src"); liveUrl = null;
@@ -310,7 +343,7 @@
       }
     }
     /** Decodes and validates a candidate, persists it atomically, then swaps the visible background. */
-    async function useBlob(blob, animatedBlob, token, persist, builtin = null) {
+    async function useBlob(blob, animatedBlob, token, persist, builtin = null, backgroundName = null) {
       let candidate = URL.createObjectURL(blob);
       try {
         const dimensions = await new Promise((resolve, reject) => {
@@ -322,9 +355,19 @@
         });
         if (!dimensions.width || !dimensions.height || dimensions.width * dimensions.height > MAX_PIXELS) throw new Error("图片超过 16M 像素限制或尺寸无效");
         if (token !== generation) { URL.revokeObjectURL(candidate); return false; }
+        let saved;
         if (persist) {
-          const saved = await queuedDb(token, "readwrite", "put", { staticBlob: blob, animatedBlob, builtin });
-          if (saved?.stale || token !== generation) { URL.revokeObjectURL(candidate); return false; }
+          if (window.DesktopAppearance?.active) {
+            const payload={name: backgroundName || fileInput?.files?.[0]?.name || (builtin ? "随风眨眼" : "背景"), static_b64: await toBase64(blob), static_mime: blob.type || "image/png", builtin: builtin || undefined};
+            if (animatedBlob) { payload.animated_b64=await toBase64(animatedBlob); payload.animated_mime=animatedBlob.type || "image/gif"; }
+            if(token!==generation){URL.revokeObjectURL(candidate);return false;}
+            saved=await window.DesktopAppearance.storeBackground(payload,()=>token===generation);
+            if(saved?.stale){URL.revokeObjectURL(candidate);return false;}
+            if (!saved?.id) throw new Error("桌面图库保存失败");
+          } else saved = await queuedDb(token, "readwrite", "put", { staticBlob: blob, animatedBlob, builtin, name: backgroundName || fileInput?.files?.[0]?.name || (builtin ? "随风眨眼" : "背景") });
+          if (saved?.stale || token !== generation) {
+            URL.revokeObjectURL(candidate); return false;
+          }
         }
         stop();
         if (staticUrl) URL.revokeObjectURL(staticUrl);
@@ -336,17 +379,55 @@
         if (removeButton) removeButton.disabled = false;
         if (opacity) opacity.disabled = false;
         if (uiOpacity) uiOpacity.disabled = false;
-        refresh(); if (persist) savePrefs(); if (token === generation) say(persist ? "背景已保存并显示。" : "已恢复本地背景。"); return true;
+        refresh(); if (persist) { savePrefs(); selected.id=saved?.id || "current"; await refreshGallery(selected.id); } if (token === generation) say(persist ? "背景已保存并显示。" : "已恢复本地背景。"); return true;
       } catch (error) { if (candidate) URL.revokeObjectURL(candidate); throw error; }
     }
     /** Restores a saved Blob without writing it back to IndexedDB. */
     async function restoreSaved(token) {
       try {
-        const saved = await queuedDb(token, "readonly", "get");
+        let saved = await queuedDb(token, "readonly", "get");
         if (saved?.stale || token !== generation) return;
+        if(saved && (saved instanceof Blob || !saved.id)) saved=await queuedDb(token,"readwrite","migrateCurrent");
         if (saved instanceof Blob) await useBlob(saved, null, token, false);
         else if (saved?.staticBlob instanceof Blob) await useBlob(saved.staticBlob, saved.animatedBlob instanceof Blob ? saved.animatedBlob : null, token, false, saved.builtin === BUILTIN.id ? BUILTIN.id : null);
+        if (token===generation && selected && saved?.id) selected.id=saved.id;
+        await refreshGallery(saved?.id || (saved ? "current" : ""));
       } catch (error) { if (token === generation) say(`本地背景存储不可用：${error.message || error}`); }
+    }
+    async function restoreDesktop(event) {
+      const token=++generation, value=event?.detail || await window.DesktopAppearance?.refresh?.();
+      if (token!==generation || !value) return;
+      const settings=value.settings || {};
+      try {
+        await renderGallery(value.backgrounds, settings.background_id);
+        if(touched)return;
+        if (Number.isFinite(settings.opacity)) alpha=Math.max(0,Math.min(100,settings.opacity));
+        if (Number.isFinite(settings.uiTransparency)) uiTransparency=Math.max(0,Math.min(100,settings.uiTransparency));
+        if (typeof settings.animation === "boolean") { animationSetting=settings.animation; animationOn=settings.animation; }
+        if(opacity){opacity.value=String(alpha);if(percent)percent.value=`${alpha}%`;}
+        if(uiOpacity){uiOpacity.value=String(uiTransparency);if(uiPercent)uiPercent.value=`${uiTransparency}%`;}
+        if(animation)animation.checked=animationOn;
+        if(value.background) await applyDesktopPayload(value.background,token);
+        else if(event?.detail?.migrateLegacyBackground) {
+          const old=await queuedDb(token,"readonly","get");
+          const stat=old?.staticBlob || (old instanceof Blob ? old : null), anim=old?.animatedBlob || null;
+          if(stat instanceof Blob && token===generation) await useBlob(stat,anim instanceof Blob?anim:null,token,true,old?.builtin || null,old?.name || "旧背景");
+          else { shown=false;selected=null;refresh(); }
+        } else { shown=false; selected=null; refresh(); }
+      } catch(error) {
+        if(token===generation) say(`本地背景恢复失败：${error.message || error}`);
+      } finally { window.DesktopAppearance?.releasePayload?.(value); }
+    }
+    document.addEventListener("desktop-appearance-ready", event => {
+      const payload=window.DesktopAppearance?.consumeBootstrapPayload?.() || event.detail;
+      restoreDesktop({detail:payload});
+    });
+    async function refreshGallery(selectedId) {
+      if(window.DesktopAppearance?.active){const value=await window.DesktopAppearance.refresh(false);await renderGallery(value?.backgrounds,value?.settings?.background_id);return;}
+      await queuedDb(generation,"readwrite","migrateCurrent");
+      const entries=await queuedDb(generation,"readonly","list");
+      if(Array.isArray(entries)) await renderGallery(entries.filter(item=>item?.id && item.id!=="current").map(item=>({id:item.id,name:item.name || "背景",builtin:item.builtin})),selectedId);
+      else await renderGallery(entries ? [{id:"current",name:"当前背景"}] : [],selectedId);
     }
     /** Shares validation and first-frame extraction; only the fixed bundled asset is additionally checked against its exact size. */
     async function loadFile(file, token, builtin = null) {
@@ -357,11 +438,12 @@
       const parsedGif = type === "gif" ? parseGif(bytes) : null;
       const parsedWebp = type === "webp" ? parseWebPFrame(bytes) : null;
       imageDimensions(bytes, type, parsedWebp, parsedGif);
-      let staticBlob = file, animatedBlob = null;
-      if (type === "gif") { staticBlob = new Blob([parsedGif.bytes], { type: TYPES.gif }); if (parsedGif.animated) animatedBlob = file; }
-      if (type === "webp" && parsedWebp.animated) { staticBlob = await webpFirstFrameCanvas(parsedWebp); animatedBlob = file; }
+      const normalized = file.type === TYPES[type] ? file : new Blob([bytes], {type:TYPES[type]});
+      let staticBlob = normalized, animatedBlob = null;
+      if (type === "gif") { staticBlob = new Blob([parsedGif.bytes], { type: TYPES.gif }); if (parsedGif.animated) animatedBlob = normalized; }
+      if (type === "webp" && parsedWebp.animated) { staticBlob = await webpFirstFrameCanvas(parsedWebp); animatedBlob = normalized; }
       if (token !== generation) return;
-      await useBlob(staticBlob, animatedBlob, token, true, builtin);
+      await useBlob(staticBlob, animatedBlob, token, true, builtin, builtin ? "随风眨眼" : file.name);
     }
     async function reportFailure(error, token) {
       if (token !== generation) return;
@@ -369,7 +451,7 @@
       if (!selected) await restoreSaved(token);
     }
     if (fileInput) fileInput.addEventListener("change", async () => {
-      const file = fileInput.files?.[0]; if (!file) return;
+      const file = fileInput.files?.[0]; if (!file) return; touched=true;
       const token = ++generation;
       say("正在读取并验证背景…");
       try { await loadFile(file, token); }
@@ -392,34 +474,79 @@
       } catch (error) { await reportFailure(error, token); }
       finally { builtinButton.disabled = false; }
     });
-    if (opacity) opacity.addEventListener("input", () => { alpha = Math.min(100, Math.max(0, Number(opacity.value) || 0)); opacity.value = String(alpha); if (percent) percent.value = `${alpha}%`; refresh(); savePrefs(); });
+    if (opacity) opacity.addEventListener("input", () => { touched=true; alpha = Math.min(100, Math.max(0, Number(opacity.value) || 0)); opacity.value = String(alpha); if (percent) percent.value = `${alpha}%`; refresh(); savePrefs(); });
     if (percent && opacity) percent.value = `${alpha}%`;
     if (uiOpacity) uiOpacity.addEventListener("input", () => {
+      touched=true;
       uiTransparency = Math.min(100, Math.max(0, Number(uiOpacity.value) || 0));
       uiOpacity.value = String(uiTransparency);
       if (uiPercent) uiPercent.value = `${uiTransparency}%`;
       refresh(); savePrefs();
     });
     refresh();
-    if (animation) animation.addEventListener("change", () => { animationSetting = animation.checked; animationOn = animationSetting; savePrefs(); refresh(); });
+    if (animation) animation.addEventListener("change", () => { touched=true; animationSetting = animation.checked; animationOn = animationSetting; savePrefs(); refresh(); });
     if (removeButton) removeButton.addEventListener("click", async () => {
+      touched=true;
       const token = ++generation; removeButton.disabled = true;
       try {
-        const deleted = await queuedDb(token, "readwrite", "delete"); if (deleted?.stale || token !== generation) return;
+        const deleted = window.DesktopAppearance?.active ? await window.DesktopAppearance.selectBackground(null) : await queuedDb(token, "readwrite", "delete"); if (deleted?.stale || token !== generation) return;
         stop(); shown = false; selected = null;
         if (builtinButton) builtinButton.setAttribute("aria-pressed", "false"); if (staticUrl) { URL.revokeObjectURL(staticUrl); staticUrl = null; }
         if (removeButton) removeButton.disabled = true; if (opacity) opacity.disabled = true;
         if (uiOpacity) uiOpacity.disabled = true;
         if (animation) { animation.checked = false; animation.disabled = true; }
-        if (animationRow) animationRow.hidden = true; refresh(); say("背景已删除。");
+        if (animationRow) animationRow.hidden = true; if(gallery)gallery.value=""; if(deleteGallery)deleteGallery.disabled=true; refresh(); say("背景已关闭，图库文件仍保留。");
       } catch (error) { if (token === generation) { if (removeButton) removeButton.disabled = !shown; say(`删除失败，已保留当前背景：${error.message || error}`); } }
     });
+    if (gallery) gallery.addEventListener("change", async () => {
+      touched=true;
+      const token=++generation;
+      try {
+        const payload=window.DesktopAppearance?.active ? await window.DesktopAppearance.selectBackground(gallery.value || null) : await queuedDb(token,"readwrite","select",gallery.value || null);
+        if(token!==generation)return;
+        if(!gallery.value){ await closeBackground(token); return; }
+        if(!payload)throw new Error("图库背景不可用");
+        if(window.DesktopAppearance?.active) await applyDesktopPayload(payload,token);
+        else if(payload.staticBlob instanceof Blob) await useBlob(payload.staticBlob,payload.animatedBlob instanceof Blob?payload.animatedBlob:null,token,false,payload.builtin || null);
+        else if(payload instanceof Blob) await useBlob(payload,null,token,false);
+        if(!window.DesktopAppearance?.active)selected.id=gallery.value;
+        if(deleteGallery)deleteGallery.disabled=!!selected?.builtin;
+      } catch(error) { if(token===generation)say(`图库选择失败，已保留当前背景：${error.message || error}`); }
+    });
+    if (deleteGallery) deleteGallery.addEventListener("click", async () => {
+      const id=gallery?.value; if(!id || selected?.builtin)return;
+      const wasSelected=selected?.id===id;
+      const token=++generation;
+      try {
+        if(window.DesktopAppearance?.active) { if(!await window.DesktopAppearance.deleteBackground(id))throw new Error("图库删除失败"); }
+        else await queuedDb(token,"readwrite","deleteById",id);
+        if(token!==generation)return;
+        if(wasSelected && window.DesktopAppearance?.active) await window.DesktopAppearance.selectBackground(null);
+        if(selected?.id===id)await closeBackground(token);
+        await refreshGallery("");
+        say("图库背景已删除。");
+      } catch(error){if(token===generation)say(`删除失败：${error.message || error}`);}
+    });
+    async function closeBackground(token) {
+      if(token!==generation)return;
+      stop(); if(staticUrl)URL.revokeObjectURL(staticUrl); staticUrl=null; selected=null; shown=false;
+      if(builtinButton)builtinButton.setAttribute("aria-pressed","false");
+      if(removeButton)removeButton.disabled=true; if(opacity)opacity.disabled=true; if(uiOpacity)uiOpacity.disabled=true;
+      if(animation){animation.checked=false;animation.disabled=true;} if(animationRow)animationRow.hidden=true;
+      if(gallery)gallery.value="";if(deleteGallery)deleteGallery.disabled=true;
+      refresh();
+    }
     document.addEventListener("visibilitychange", () => { visible = !document.hidden; if (!visible) stop(); else refresh(); });
     window.addEventListener("pagehide", stop);
     window.addEventListener("pageshow", () => { visible = !document.hidden; refresh(); });
     let media = null; try { media = window.matchMedia("(prefers-reduced-motion: reduce)"); } catch { /* Optional browser preference. */ }
     media?.addEventListener?.("change", event => { reduced = event.matches; if (animationSetting === null) { animationOn = !reduced; if (animation) animation.checked = animationOn; } refresh(); });
-    restoreSaved(generation);
+    if(window.DesktopAppearance?.active) {
+      const initial=window.DesktopAppearance.consumeBootstrapPayload?.();
+      if(initial) restoreDesktop({detail:initial});
+      else if(window.DesktopAppearance.ready) restoreDesktop();
+      // An in-flight bootstrap dispatches the one full payload to the listener above.
+    } else restoreSaved(generation);
   }
   return { initAppearanceBackground, parseWebP: parseWebPFrame, gifFirstFrame, parseGif, jpegDimensions, imageDimensions, sniff, MAX_BYTES, MAX_PIXELS };
 });

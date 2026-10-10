@@ -874,6 +874,9 @@ body > header { z-index: 60; }
 .appearance-opacity-note { font-size: 11px; color: var(--muted); line-height: 1.5; }
 .appearance-opacity-row input { flex: 1; min-width: 60px; accent-color: var(--blue); padding: 0; }
 .appearance-opacity-row output { min-width: 4ch; text-align: right; color: var(--muted); }
+.appearance-gallery-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.appearance-gallery-row label { margin: 0; white-space: nowrap; }
+.appearance-gallery-row select { flex: 1; min-width: 140px; max-width: 360px; height: 32px; padding: 4px 8px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 7px; }
 .appearance-animation-row { display: flex; flex-direction: row; gap: 8px; align-items: center; }
 @media (max-width: 700px) { .theme-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 

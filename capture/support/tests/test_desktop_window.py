@@ -103,3 +103,23 @@ def test_external_tool_uses_browser_without_navigating_app(monkeypatch):
     with pytest.raises(ValueError):
         DesktopLinks().open_external_tool("https://spidertools.cn.evil.test/")
     assert browser.call_count == 1
+
+
+def test_desktop_restart_preserves_website_storage(monkeypatch):
+    """实际窗口入口必须关闭清空网站数据的隐私模式，且保留服务退出责任。"""
+    from capture.desktop import window as module
+
+    backend = Mock(url="http://127.0.0.1:8765")
+    shell = Mock()
+    from unittest.mock import MagicMock
+    shell.events.loaded = MagicMock()
+    webview = SimpleNamespace(settings={}, create_window=Mock(return_value=shell), start=Mock())
+    monkeypatch.setattr(sys, "argv", ["app_main.py"])
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(module, "prepare_app_identity", Mock())
+    monkeypatch.setattr(module, "DesktopBackend", Mock(return_value=backend))
+    monkeypatch.setitem(sys.modules, "webview", webview)
+    module.main()
+    assert webview.start.call_args.kwargs["private_mode"] is False
+    backend.start.assert_called_once()
+    backend.close.assert_called_once()

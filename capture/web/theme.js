@@ -13,8 +13,12 @@ function applyTheme(theme, persist = true) {
   const value = normalizeAppearanceTheme(theme);
   document.documentElement.dataset.theme = value;
   if (persist) {
-    try { localStorage.setItem("capture.theme", value); }
-    catch { /* 存储被禁用时仍允许即时切换。 */ }
+    if (window.DesktopAppearance?.active) window.DesktopAppearance.save({theme: value});
+    else {
+      try { localStorage.setItem("capture.theme", value); }
+      catch { /* 存储被禁用时仍允许即时切换。 */ }
+      window.DesktopAppearance?.save({theme: value});
+    }
   }
   document.dispatchEvent(new CustomEvent("appearance-theme-change", {detail: value}));
 }
@@ -22,6 +26,9 @@ try { applyTheme(localStorage.getItem("capture.theme") || "light", false); }
 catch { applyTheme("light", false); }
 window.addEventListener("storage", event => {
   if (event.key === "capture.theme") applyTheme(event.newValue, false);
+});
+window.addEventListener("pywebviewready", () => {
+  window.DesktopAppearance?.restoreTheme?.();
 });
 
 /** 各页面共用原生按钮菜单，主题切换不改变页面状态或查询条件。 */

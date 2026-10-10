@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from capture.desktop.appearance import DesktopAppearanceAPI
 from config import DATA, ROOT, load_startup
 
 
@@ -86,8 +87,11 @@ class DesktopBackend:
                 self.log.close()
 
 
-class DesktopLinks:
-    """仅将受支持的外部工具交给系统浏览器，控制台继续留在 App。"""
+class DesktopLinks(DesktopAppearanceAPI):
+    """向桌面页面提供本机外观存储与限定的外部工具入口。"""
+
+    def __init__(self, data_dir=None):
+        super().__init__(data_dir=data_dir)
 
     def open_external_tool(self, url):
         """限定工具站点，避免 WebView 的桥接接口成为任意网址启动入口。"""
@@ -160,7 +164,8 @@ def main():
             js_api=DesktopLinks(),
         )
         window.events.loaded += lambda: print("天机阁窗口页面已加载", flush=True)
-        webview.start(set_app_identity, gui="cocoa", debug=False)
+        # Cocoa 的默认隐私模式会在启动时清空 localStorage 与 IndexedDB。
+        webview.start(set_app_identity, gui="cocoa", debug=False, private_mode=False)
     except (RuntimeError, OSError) as exc:
         logging.getLogger(__name__).error("窗口启动失败：%s", exc)
         raise SystemExit(1) from exc
