@@ -167,6 +167,10 @@ class RequestViewer {
     this.queryJson = "{}";
     this.copyContent = "";
     this.sequence = 0;
+    this.protobufCache = new Map();
+    this.protobufSequence = 0;
+    this.protobufSchema = null;
+    this.protoUploadSequence = 0;
     this.session = null;
     this.id = null;
     this.dialog.querySelectorAll("[data-viewer-part]").forEach((button) => {
@@ -185,6 +189,32 @@ class RequestViewer {
       document.getElementById("viewerQueryJson").hidden = query.count === 0 || !this.queryExpanded;
     };
     document.getElementById("viewerMode").onchange = () => this.render();
+    document.getElementById("viewerProtoApply").onclick = () => this.applyProtobufSchema();
+    document.getElementById("viewerProtoType").onchange = () => this.render();
+    document.getElementById("viewerProtoReset").onclick = () => {
+      this.protoUploadSequence++;
+      this.protobufSchema = null;
+      document.getElementById("viewerProtoSource").value = "";
+      document.getElementById("viewerProtoFile").value = "";
+      document.getElementById("viewerProtoType").replaceChildren(new Option("标准 wire 解码", ""));
+      document.getElementById("viewerProtoStatus").textContent = "已恢复标准 wire 解码，原始请求未改变。";
+      this.render();
+    };
+    document.getElementById("viewerProtoFile").onchange = async event => {
+      const token = ++this.protoUploadSequence;
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        if (!file.name.toLowerCase().endsWith(".proto") || file.size > 256 * 1024) throw new Error("请选择不超过 256 KiB 的 .proto 文件。");
+        const text = await file.text();
+        if (token !== this.protoUploadSequence) return;
+        document.getElementById("viewerProtoSource").value = text;
+        this.applyProtobufSchema();
+      } catch (error) {
+        if (token === this.protoUploadSequence) document.getElementById("viewerProtoStatus").textContent = `定义读取失败：${error.message}`;
+      }
+      event.target.value = "";
+    };
     document.getElementById("viewerCopy").onclick = async () => {
       try {
         await navigator.clipboard.writeText(
@@ -229,7 +259,10 @@ class RequestViewer {
         });
     };
     this.dialog.addEventListener("close", () => {
+      this.protoUploadSequence++;
       this.sequence++;
+      this.protobufSequence++;
+      this.protobufCache.clear();
       this.webSocketViewer.reset();
       this.flow = null;
       this.urlDraft = null;
@@ -255,8 +288,10 @@ class RequestViewer {
   }
 
   /** 先展示加载状态；关闭弹窗后丢弃迟到响应，避免保留大正文。 */
-  async open(session, id, part = "request") {
+  async open(session, id, part = "request", bodyMode = null) {
     const sequence = ++this.sequence;
+    this.protobufSequence++;
+    this.protobufCache.clear();
     this.flow = null;
     this.urlDraft = null;
     this.session = session;
@@ -292,6 +327,10 @@ class RequestViewer {
       if (sequence !== this.sequence || !this.dialog.open) return;
       this.flow = flow;
       this.render(true);
+      if (bodyMode === "protobuf") {
+        document.getElementById("viewerMode").value = "protobuf";
+        this.render();
+      }
     } catch (error) {
       if (sequence === this.sequence && this.dialog.open)
         document.getElementById("viewerNotice").textContent = error.message;
@@ -309,7 +348,67 @@ class RequestViewer {
     const completed =
       this.flow?.status === "pending" && flow.status !== "pending";
     this.flow = flow;
+    this.protobufSequence++;
+    this.protobufCache.clear();
     this.render(completed);
+  }
+
+  /** 校验本地定义成功后才替换当前展示定义。 */
+  applyProtobufSchema() {
+    this.protoUploadSequence++;
+    try {
+      const schema = ProtobufSchema.compile(document.getElementById("viewerProtoSource").value);
+      const select = document.getElementById("viewerProtoType");
+      select.replaceChildren(new Option("标准 wire 解码", ""), ...schema.types.map(name => new Option(name, name)));
+      this.protobufSchema = schema;
+      document.getElementById("viewerProtoStatus").textContent = `已加载 ${schema.types.length} 个消息类型，请选择类型。定义仅保留在当前页面。`;
+      this.render();
+    } catch (error) {
+      document.getElementById("viewerProtoStatus").textContent = `定义无效：${error.message}；保留之前的定义。`;
+    }
+  }
+
+  /** 按需读取已保存字节；解析结果仅用于当前视图，绝不回写请求。 */
+  async renderProtobuf(message) {
+    const token = ++this.protobufSequence, sequence = this.sequence, part = this.part;
+    const raw = document.getElementById("viewerRaw"), notice = document.getElementById("viewerNotice");
+    this.copyContent = "";
+    document.getElementById("viewerCopy").disabled = true;
+    raw.textContent = "正在读取 Protobuf 字节…";
+    const current = () => token === this.protobufSequence && sequence === this.sequence && this.dialog.open && this.part === part && document.getElementById("viewerMode").value === "protobuf";
+    try {
+      if (!message || message.truncated || message.display_truncated || message.decode_error || (message.body_state && !["complete", "empty"].includes(message.body_state)))
+        throw new Error("正文未完整保存或解压失败，不能作为完整 Protobuf 解析；原文可切换查看或下载。");
+      const type = (message.headers || []).find(([key]) => key.toLowerCase() === "content-type")?.[1] || "";
+      if (/application\/grpc/i.test(type)) throw new Error("gRPC 含帧封装，暂不支持直接作为 Protobuf 消息解码。");
+      let result = this.protobufCache.get(part);
+      if (!result) {
+        const full = await readRequests.json(`/api/sessions/${encodeURIComponent(this.session)}/flows/${encodeURIComponent(this.id)}?text_only=false`, "protobuf-detail");
+        if (!current()) return;
+        const binary = full[part];
+        if (!binary || binary.truncated || binary.display_truncated || binary.decode_error)
+          throw new Error("正文已截断或解压失败，不能解析完整 Protobuf。");
+        const encoded = binary.decoded_b64 ?? binary.body_b64;
+        if (typeof encoded !== "string") throw new Error("该记录没有可用的原始正文；请确认后端支持字节详情读取。");
+        if (encoded.length > Math.ceil(ProtobufViewer.MAX_BYTES / 3) * 4) throw new Error("Protobuf 展示上限为 2 MiB，请下载原文分析。");
+        const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
+        result = { bytes, wire: ProtobufViewer.parse(bytes) };
+        this.protobufCache.set(part, result);
+      }
+      if (!current()) return;
+      const selectedType = document.getElementById("viewerProtoType").value;
+      this.copyContent = selectedType && this.protobufSchema
+        ? JSON.stringify(ProtobufSchema.decode(this.protobufSchema, selectedType, result.bytes), null, 2)
+        : ProtobufViewer.format(result.wire);
+      raw.textContent = this.copyContent;
+      notice.textContent = "Protobuf 只读解码：无 schema，字段编号与 wire 类型来自原文；字符串和嵌套消息仅为候选解释，不代表真实字段类型。原始请求及重放内容未改变。";
+      if (selectedType) notice.textContent = `Protobuf 只读解码 · ${selectedType}：按自定义定义展示；未定义字段请切回标准 wire 查看。原始字节及重放内容未改变。`;
+      document.getElementById("viewerCopy").disabled = false;
+    } catch (error) {
+      if (!current()) return;
+      raw.textContent = "无法解码此正文。请切换原始正文查看。";
+      notice.textContent = `Protobuf 解析失败：${error.message || error}`;
+    }
   }
 
   /** 每次切换报文重新判断 JSON；正文与头部始终以文本插入。 */
@@ -392,6 +491,7 @@ class RequestViewer {
         !validJson;
       if (option.value === "decoded") option.disabled = !decodedBody.changed;
       if (option.value === "events") option.disabled = !sse;
+      if (option.value === "protobuf") option.disabled = !message;
     }
     if (resetMode)
       mode.value =
@@ -399,7 +499,9 @@ class RequestViewer {
           ? "tree"
           : "raw";
     if (mode.value === "events" && !sse) mode.value = "raw";
-    if (!validJson && !["decoded", "events"].includes(mode.value)) mode.value = "raw";
+    if (!validJson && !["decoded", "events", "protobuf"].includes(mode.value)) mode.value = "raw";
+    document.getElementById("viewerProtoSettings").hidden = mode.value !== "protobuf" || ws;
+    if (mode.value !== "protobuf") this.protobufSequence++;
     const notice = [];
     if (!message)
       notice.push(
@@ -439,7 +541,10 @@ class RequestViewer {
     raw.hidden = ["tree", "events"].includes(mode.value);
     tree.hidden = mode.value !== "tree";
     tree.replaceChildren();
-    if (mode.value === "events") {
+    if (mode.value === "protobuf") {
+      tree.hidden = true; raw.hidden = false;
+      this.renderProtobuf(message);
+    } else if (mode.value === "events") {
       this.copyContent = message?.body_text || "";
       renderSseEvents(events, this.copyContent);
       raw.textContent = "";

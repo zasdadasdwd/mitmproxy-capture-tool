@@ -77,3 +77,7 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 ### 重放聚合列表
 
 `GET /api/replays/flows` 聚合本次启动 replay 会话，保留 FlowFilters 语义，全局稳定排序后分页；返回真实 session_id 及可选锚点 offset。使用每批一页的 heapq 归并，正文仅在显式正文筛选时按既有规则读取。前端 `__replays__` 仅是虚拟视图键，不可作为真实会话提交；单条操作用 flowSession 解析，跨批次选择用 selectedGroups 分组。定位参数只调整位置，不参与列表过滤。
+
+### Protobuf 正文查看
+
+`web/protobuf-viewer.js` 负责有界标准 wire 解码，`web/protobuf-schema.js` 与本地 vendored protobuf.js 负责可选的自定义定义。`request-viewer.js` 按需读取现有详情 API 的 `decoded_b64/body_b64` 并控制迟到回调与缓存；不从 `body_text` 重建二进制，不写回请求或调用重放。使用及限制见[Protobuf解析](Protobuf解析.md)。

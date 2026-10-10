@@ -36,7 +36,7 @@ test('详情状态缓存有界，标签滚动位置与折叠状态独立',()=>{
 test('复制头部保留重复项和顺序；复制正文使用原文，不取展示格式',()=>{
  const copied=[];const elements={detailCopyHeaders:{},detailCopyBody:{}};
  const ctx=vm.createContext({state:{tab:'original_request',detail:{original_request:{headers:[['X-Repeat','first'],['X-Repeat','second']],body_text:'body=%7B%22id%22%3A1%7D'}}},$:id=>elements[id],copyMessageText:text=>copied.push(text)});
- vm.runInContext(source.slice(source.indexOf('$("detailCopyHeaders").onclick'),source.indexOf('$("detailQueryToggle").onclick')),ctx);
+ vm.runInContext(source.slice(source.indexOf('$("detailCopyHeaders").onclick'),source.indexOf('$("detailProtobuf").onclick')),ctx);
  elements.detailCopyHeaders.onclick();elements.detailCopyBody.onclick();
  assert.deepEqual(copied,['X-Repeat: first\nX-Repeat: second','body=%7B%22id%22%3A1%7D']);
 });

@@ -2247,6 +2247,13 @@ button {
   overflow-wrap: anywhere;
   user-select: text;
 }
+/* Optional read-only protocol definitions stay inside the complete body viewer. */
+#viewerProtoSettings { padding: 8px 0; }
+#viewerProtoSettings textarea { width: 100%; box-sizing: border-box; font-family: var(--mono, monospace); margin: 8px 0; }
+.viewer-proto-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.viewer-proto-actions label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.viewer-proto-actions input { max-width: 220px; }
+.viewer-proto-actions select { max-width: 280px; }
 .viewer-toolbar {
   display: block;
   padding: 0 12px 10px;

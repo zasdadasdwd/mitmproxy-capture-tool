@@ -1132,6 +1132,7 @@ function renderDetail() {
     renderMessageHeaders($("detailHeaders"), message);
     $("detailCopyHeaders").disabled = !message?.headers?.length;
     $("detailCopyBody").disabled = !message?.body_text;
+    $("detailProtobuf").disabled = !message;
     setDetailSection($("detailHeadersSection"), `${queryKey}:headers`, message?.headers?.length);
     const hasBody = Boolean(message?.body_text || message?.body_b64 || message?.body_size);
     setDetailSection($("detailBodySection"), `${queryKey}:body`, hasBody);
@@ -1192,6 +1193,10 @@ $("detailCopyHeaders").onclick = () =>
   );
 $("detailCopyBody").onclick = () =>
   copyMessageText(state.detail?.[state.tab]?.body_text || "");
+$("detailProtobuf").onclick = action(async () => {
+  if (!state.activeId || !["request", "original_request", "response"].includes(state.tab)) return;
+  await requestViewer.open(flowSession(), state.activeId, state.tab, "protobuf");
+});
 $("detailQueryToggle").onclick = () => {
   const output = $("detailQueryJson");
   output.hidden = !output.hidden;
@@ -2424,7 +2429,7 @@ $("closeCurlCopy").onclick = $("doneCurlCopy").onclick = () => $("curlCopyDialog
 $("curlCopyDialog").addEventListener("close", () => { $("curlCopyText").value = ""; });
 
 // 正文工具操作不应触发所在 summary 的折叠。
-for (const id of ["detailCopyHeaders", "detailCopyBody", "viewerMode", "viewerCopy", "viewerCollapse"]) {
+for (const id of ["detailCopyHeaders", "detailCopyBody", "detailProtobuf", "viewerMode", "viewerCopy", "viewerCollapse"]) {
   $(id).addEventListener("click", event => { event.stopPropagation(); if (id.startsWith("detail")) event.preventDefault(); });
 }
 $("detailEditReplay").closest("details").querySelector("summary").addEventListener("click", event => {

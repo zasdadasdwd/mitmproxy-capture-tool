@@ -404,7 +404,7 @@
               <details id="detailBodySection" class="message-body-section" open>
                 <summary class="message-section-bar">
                   <strong id="detailBodyTitle">请求体</strong><span id="detailBodyState" class="muted"></span>
-                  <button id="detailCopyBody" type="button">复制正文</button><a id="detailDownloadBody" hidden>下载已保存原文</a>
+                  <button id="detailCopyBody" type="button">复制正文</button><button id="detailProtobuf" type="button">Protobuf 解析</button><a id="detailDownloadBody" hidden>下载已保存原文</a>
                 </summary>
                 <div id="detailNotice" class="viewer-notice" role="status"></div>
                 <pre id="detailContent">请求体将在这里显示。</pre><div id="detailEvents" class="sse-events" hidden></div>
@@ -989,12 +989,25 @@
         <select id="viewerMode" aria-label="正文显示方式">
           <option value="raw">原始正文</option><option value="events" disabled>SSE 事件</option>
           <option value="decoded" disabled>URL 解码</option>
+          <option value="protobuf">Protobuf · 只读解码</option>
           <option value="formatted">JSON 格式化</option>
           <option value="tree">JSON 树</option>
         </select>
         <button id="viewerCopy" type="button">复制正文</button><a id="viewerDownloadBody" hidden>下载已保存原文</a>
         <button id="viewerCollapse" type="button" hidden>收起节点</button>
       </summary>
+      <details id="viewerProtoSettings" hidden>
+        <summary>自定义 Protobuf 定义（可选）</summary>
+        <label for="viewerProtoSource">粘贴 .proto 定义；默认使用标准 wire 解码</label>
+        <textarea id="viewerProtoSource" rows="5" spellcheck="false" placeholder='syntax = "proto3"; message Example { string name = 1; }'></textarea>
+        <div class="viewer-proto-actions">
+          <label>上传 .proto <input id="viewerProtoFile" type="file" accept=".proto,text/plain"></label>
+          <button id="viewerProtoApply" type="button">应用定义</button>
+          <label>消息类型 <select id="viewerProtoType"><option value="">标准 wire 解码</option></select></label>
+          <button id="viewerProtoReset" type="button">恢复标准解码</button>
+        </div>
+        <p id="viewerProtoStatus" role="status" class="muted">定义仅在当前页面内使用，不上传服务器。</p>
+      </details>
       <div id="viewerNotice" role="status" class="viewer-notice"></div>
       <div id="viewerBodyArea" class="vertical-area"><pre id="viewerRaw" tabindex="0"></pre>
       <div id="viewerTree" class="json-tree" hidden></div><div id="viewerEvents" class="sse-events" hidden></div></div>
@@ -1036,12 +1049,16 @@
     <script src="/read-requests.js?v=20261008-live-delete"></script>
     <script src="/body-events.js?v=20261008-live-delete"></script>
     <script src="/websocket-viewer.js?v=20261008-live-delete"></script>
-    <script src="/request-viewer.js?v=20261009-detail-ui-r2"></script>
+    <script src="/vendor/protobufjs/protobuf.min.js"></script>
+    <script src="/vendor/protobufjs/long.js"></script>
+    <script src="/protobuf-viewer.js?v=20261011"></script>
+    <script src="/protobuf-schema.js?v=20261011"></script>
+    <script src="/request-viewer.js?v=20261011-protobuf"></script>
     <script src="/sidebar.js"></script>
     <script src="/connection-info.js?v=20261008-transport"></script>
     <script src="/replay-editor.js?v=20261008-compact"></script>
     <script src="/request-comparison.js?v=20261008-live-delete"></script>
-    <script src="/app.js?v=20261010-certificate-feedback"></script>
+    <script src="/app.js?v=20261011-protobuf"></script>
     <script src="/detail-resizer.js?v=20261001-fine-resize"></script>
     <script src="/table-resizer.js?v=20261009-compact-list"></script>
     <script src="/appearance-background.js?v=20261010-appearance-gallery-r3"></script>

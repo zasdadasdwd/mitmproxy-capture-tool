@@ -239,6 +239,7 @@ mitmproxy-capture-tool/
 | [架构与模块地图](capture/support/docs/架构与模块_AI.md) | 开发者、第三方扩展与 AI 接手开发 |
 | [数据链路说明](capture/support/docs/数据链路.md) | 参数搜索、来源追踪与三维关系分析 |
 | [MCP 接入](capture/support/docs/MCP接入.md) | Agent 客户端配置与查询工具使用 |
+| [Protobuf 只读解析](capture/support/docs/Protobuf解析.md) | 标准 wire 查看、自定义 .proto 与消息类型 |
 | [证书安装](capture/support/docs/证书安装.md) | HTTPS 解密与设备证书信任 |
 | [优化建议与检查记录](capture/support/docs/优化建议与检查记录.md) | 后续开发与已知改进项 |
 
