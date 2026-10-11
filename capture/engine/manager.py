@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from capture.console_output import ConsoleLogRelay
 from config import CONFIG_PATH, DATA, ROOT
 
 
@@ -28,11 +29,12 @@ def _read_log_tail(path, limit=2000):
 class EngineManager:
     """负责引擎进程、启动确认和采集通道，不直接处理 HTTP 参数。"""
 
-    def __init__(self, store, notify, hook_modules=()):
+    def __init__(self, store, notify, hook_modules=(), *, console_output=True):
         """接收存储对象与通知回调，代理可常驻，记录状态由独立控制文件切换。"""
         self.store = store
         self.notify = notify
         self.hook_modules = tuple(hook_modules)
+        self.console_output = console_output
         self.process = None
         self.session_id = None
         self.server = None
@@ -45,6 +47,7 @@ class EngineManager:
         self.connections = set()
         self.clients = set()
         self.log_file = None
+        self.console_relay = None
         self.socket_folder = None
         self.stopping = False
         self.capture_waiter = None
@@ -91,6 +94,8 @@ class EngineManager:
             )
             environment = dict(
                 os.environ,
+                PYTHONUNBUFFERED="1",
+                PYTHONIOENCODING="utf-8",
                 CAPTURE_SETTINGS=str(CONFIG_PATH),
                 CAPTURE_SOCKET=socket_path,
                 CAPTURE_TOKEN=self.token,
@@ -139,6 +144,11 @@ class EngineManager:
                 stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True,
             )
+            if self.console_output:
+                self.console_relay = ConsoleLogRelay(
+                    Path(self.socket_folder.name) / "engine.log"
+                )
+                self.console_relay.start()
             self.worker = asyncio.create_task(self.watch_process(self.process))
             await asyncio.wait_for(self.ready.wait(), timeout=20)
             await asyncio.sleep(0.1)
@@ -221,6 +231,8 @@ class EngineManager:
     async def watch_process(self, process):
         """监控非预期退出，将故障同步到界面和会话状态。"""
         code = await process.wait()
+        if self.console_relay:
+            await asyncio.to_thread(self.console_relay.close)
         if not self.stopping:
             log = Path(self.socket_folder.name) / "engine.log"
             tail = _read_log_tail(log)
@@ -242,6 +254,9 @@ class EngineManager:
             writer.close()
         if self.clients:
             await asyncio.gather(*list(self.clients), return_exceptions=True)
+        if self.console_relay:
+            await asyncio.to_thread(self.console_relay.close)
+            self.console_relay = None
         if self.log_file:
             self.log_file.close()
             self.log_file = None

@@ -2,11 +2,11 @@
 
 import os
 import re
+import tomllib
 from pathlib import Path, PurePosixPath
 from typing import Literal
 from urllib.parse import urlsplit
 
-import tomllib
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROOT = Path(__file__).resolve().parent
@@ -56,6 +56,12 @@ class ExtensionsStartup(BaseModel):
         return modules
 
 
+class LoggingStartup(BaseModel):
+    """子进程日志是否镜像到 PyCharm/Terminal 启动控制台。"""
+
+    console_output: bool = True
+
+
 class StartupConfig(BaseModel):
     """区分进程启动配置与界面热更新的抓包策略。"""
 
@@ -63,6 +69,7 @@ class StartupConfig(BaseModel):
     proxy: ProxyStartup = Field(default_factory=ProxyStartup)
     mcp: MCPStartup = Field(default_factory=MCPStartup)
     extensions: ExtensionsStartup = Field(default_factory=ExtensionsStartup)
+    logging: LoggingStartup = Field(default_factory=LoggingStartup)
 
 
 def load_startup(path: Path | None = None) -> StartupConfig:

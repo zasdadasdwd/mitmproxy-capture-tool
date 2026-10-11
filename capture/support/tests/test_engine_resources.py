@@ -158,3 +158,51 @@ def test_large_engine_log_reads_only_bounded_tail(tmp_path, monkeypatch):
     assert read_sizes == [2000]
     assert len(tail.encode()) <= 2000
     assert tail.endswith("final diagnostic")
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_console_switch_controls_relay_not_log(monkeypatch, enabled):
+    from unittest.mock import Mock
+
+    manager = EngineManager(None, lambda event: None, console_output=enabled)
+    relay = Mock()
+    monkeypatch.setattr(manager_module, "ConsoleLogRelay", relay)
+    server = FakeServer()
+    spawn_options = {}
+
+    async def run():
+        exited = asyncio.Event()
+
+        async def start_server(*args, **kwargs):
+            return server
+
+        class Process:
+            returncode = None
+
+            async def wait(self):
+                await exited.wait()
+                return 0
+
+            def send_signal(self, signal):
+                self.returncode = 0
+                exited.set()
+
+        async def spawn(*args, **kwargs):
+            spawn_options.update(kwargs)
+            manager.ready.set()
+            return Process()
+
+        monkeypatch.setattr(asyncio, "start_unix_server", start_server)
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+        await manager.start_proxy(settings())
+        assert spawn_options["stdout"] is manager.log_file
+        assert spawn_options["env"]["PYTHONUNBUFFERED"] == "1"
+        if enabled:
+            relay.return_value.start.assert_called_once()
+        else:
+            relay.assert_not_called()
+        await manager.stop_process()
+        assert manager.console_relay is None
+        assert manager.log_file is None
+
+    asyncio.run(run())

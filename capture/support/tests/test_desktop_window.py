@@ -123,3 +123,41 @@ def test_desktop_restart_preserves_website_storage(monkeypatch):
     assert webview.start.call_args.kwargs["private_mode"] is False
     backend.start.assert_called_once()
     backend.close.assert_called_once()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_console_switch_applies_to_desktop_backend(tmp_path, monkeypatch, enabled):
+    from capture.desktop import window as module
+    from config import load_startup
+
+    path = tmp_path / "startup.toml"
+    path.write_text(f"[logging]\nconsole_output = {str(enabled).lower()}\n")
+    assert load_startup(path).logging.console_output is enabled
+    backend = DesktopBackend(path)
+    monkeypatch.setattr(module, "DATA", tmp_path)
+    monkeypatch.setattr(backend, "ready", Mock(side_effect=[False, True]))
+    process = Mock()
+    process.poll.return_value = None
+    spawn = Mock(return_value=process)
+    relay = Mock()
+    monkeypatch.setattr(module.subprocess, "Popen", spawn)
+    monkeypatch.setattr(module, "ConsoleLogRelay", relay)
+    try:
+        backend.start()
+        assert spawn.call_args.kwargs["stdout"] is backend.log
+        if enabled:
+            relay.return_value.start.assert_called_once()
+        else:
+            relay.assert_not_called()
+    finally:
+        backend.close()
+    if enabled:
+        relay.return_value.close.assert_called_once()
+
+
+def test_console_switch_defaults_on_for_older_config(tmp_path):
+    from config import load_startup
+
+    path = tmp_path / "startup.toml"
+    path.write_text("[web]\nport = 8765\n")
+    assert load_startup(path).logging.console_output is True

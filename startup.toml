@@ -23,3 +23,8 @@ entrypoint = "capture.agent_mcp.server:main"
 # 第三方 Hook 的 Python 模块名；模块需要安装在当前 .venv 或位于项目目录。
 # 示例：hook_modules = ["my_hooks", "my_package.capture_hooks"]
 hook_modules = []
+
+[logging]
+# 是否把代理/Hook 与桌面后台日志输出到 PyCharm Run 或启动终端。
+# false 仅关闭镜像，日志文件仍保留；修改后完整重启工作台生效。
+console_output = true

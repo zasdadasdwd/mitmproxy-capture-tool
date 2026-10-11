@@ -30,7 +30,10 @@ class Workbench:
         self.runtime_id = uuid4().hex
         self.subscribers = set()
         self.engine = EngineManager(
-            self.store, self.notify, self.startup.extensions.hook_modules
+            self.store,
+            self.notify,
+            self.startup.extensions.hook_modules,
+            console_output=self.startup.logging.console_output,
         )
         self.jobs = {}
         self.config_lock = asyncio.Lock()

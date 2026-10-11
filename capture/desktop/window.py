@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -11,6 +12,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from capture.console_output import ConsoleLogRelay
 from capture.desktop.appearance import DesktopAppearanceAPI
 from config import DATA, ROOT, load_startup
 
@@ -22,8 +24,10 @@ class DesktopBackend:
         self.config_path = Path(config_path).resolve()
         startup = load_startup(self.config_path)
         self.url = f"http://{startup.web.host}:{startup.web.port}"
+        self.console_output = startup.logging.console_output
         self.process = None
         self.log = None
+        self.console_relay = None
         self.client = httpx.Client(base_url=self.url, trust_env=False, timeout=1)
 
     def ready(self):
@@ -50,6 +54,8 @@ class DesktopBackend:
         log_path = DATA / "logs/desktop-window.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         self.log = log_path.open("a", encoding="utf-8")
+        if self.console_output:
+            self.console_relay = ConsoleLogRelay(log_path, offset=log_path.stat().st_size)
         self.process = subprocess.Popen(
             [
                 sys.executable,
@@ -59,9 +65,12 @@ class DesktopBackend:
                 "--no-browser",
             ],
             cwd=ROOT,
+            env=dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8"),
             stdout=self.log,
             stderr=subprocess.STDOUT,
         )
+        if self.console_relay is not None:
+            self.console_relay.start()
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
@@ -83,6 +92,9 @@ class DesktopBackend:
                     self.process.wait()
         finally:
             self.client.close()
+            if self.console_relay is not None:
+                self.console_relay.close()
+                self.console_relay = None
             if self.log is not None:
                 self.log.close()
 
