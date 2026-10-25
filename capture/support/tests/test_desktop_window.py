@@ -115,6 +115,7 @@ def test_desktop_restart_preserves_website_storage(monkeypatch):
     shell.events.loaded = MagicMock()
     shell.events.minimized = MagicMock()
     shell.events.restored = MagicMock()
+    shell.events.closed = MagicMock()
     webview = SimpleNamespace(settings={}, create_window=Mock(return_value=shell), start=Mock())
     monkeypatch.setattr(sys, "argv", ["app_main.py"])
     monkeypatch.setattr(sys, "platform", "darwin")

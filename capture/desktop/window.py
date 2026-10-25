@@ -14,6 +14,7 @@ import httpx
 
 from capture.console_output import ConsoleLogRelay
 from capture.desktop.appearance import DesktopAppearanceAPI
+from capture.desktop.background_memory import BackgroundMemoryMonitor
 from config import DATA, ROOT, load_startup
 
 
@@ -187,6 +188,7 @@ def main():
             "请先安装窗口依赖：python -m pip install -r capture/desktop/requirements.txt"
         )
     backend = DesktopBackend(args.config)
+    memory_monitor = None
     try:
         backend.start()
         webview.settings["ALLOW_DOWNLOADS"] = True
@@ -201,6 +203,11 @@ def main():
             text_select=True,
             js_api=DesktopLinks(),
         )
+        memory_monitor = BackgroundMemoryMonitor(
+            window, load_startup(args.config).background_protection
+        )
+        window.events.loaded += memory_monitor.start
+        window.events.closed += memory_monitor.close
         bind_background_visibility(window)
         window.events.loaded += lambda: print("天机阁窗口页面已加载", flush=True)
         # Cocoa 的默认隐私模式会在启动时清空 localStorage 与 IndexedDB。
@@ -209,4 +216,6 @@ def main():
         logging.getLogger(__name__).error("窗口启动失败：%s", exc)
         raise SystemExit(1) from exc
     finally:
+        if memory_monitor is not None:
+            memory_monitor.close()
         backend.close()

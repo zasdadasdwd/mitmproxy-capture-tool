@@ -278,6 +278,51 @@
       onFrame: () => { layer.style.display = "none"; },
       onError: error => { animationOn = false; if (animation) animation.checked = false; refresh(); say(`动画播放失败，已显示静态首帧：${error.message}`); }
     });
+    let protectionUnavailable = false;
+    let protectionLevel = 0, protectionNotice = null, protectionText = null, protectionResume = null;
+    function clearProtection() {
+      protectionLevel = 0;
+      protection?.reset();
+      if (protectionNotice) protectionNotice.style.display = "none";
+      if (animation) animation.checked = !!selected?.animatedBlob && animationOn;
+    }
+    function protectionMessage(message, resumable) {
+      if (!protectionNotice) {
+        protectionNotice = document.createElement("aside");
+        protectionNotice.id = "backgroundMemoryNotice";
+        protectionNotice.setAttribute("role", "status");
+        Object.assign(protectionNotice.style, {position:"fixed",bottom:"16px",right:"16px",maxWidth:"min(480px, calc(100vw - 32px))",padding:"12px",gap:"12px",alignItems:"center",zIndex:"10000",borderRadius:"8px",background:"var(--surface, #fff)",color:"var(--text, #20242c)",border:"1px solid var(--border, #ccc)",boxShadow:"0 4px 20px #0003"});
+        protectionText = document.createElement("span");
+        protectionResume = document.createElement("button");
+        protectionResume.style.flexShrink = "0"; protectionResume.style.minHeight = "32px";
+        protectionResume.type = "button"; protectionResume.textContent = "恢复背景";
+        protectionResume.addEventListener("click", () => { clearProtection(); refresh(); say("背景已手动恢复，仍受内存保护。"); });
+        protectionNotice.append(protectionText); protectionNotice.append(protectionResume);
+        document.body.append(protectionNotice);
+      }
+      protectionText.textContent = message;
+      protectionResume.style.display = resumable ? "" : "none";
+      protectionNotice.style.display = "flex";
+      say(message);
+    }
+    const protection = globalThis.BackgroundMemoryProtection ? new BackgroundMemoryProtection((level, sample) => {
+      protectionLevel = level;
+      if (animation) animation.checked = false;
+      refresh();
+      const action = level === 2 ? "临时关闭背景" : selected?.animatedBlob && animationOn ? "暂停背景动画" : "保持背景静态显示";
+      protectionMessage(`WebKit 内存 ${Math.round(sample.mib)} MiB，已${action}。图片和设置已保留。`, true);
+    }) : null;
+    window.addEventListener("tianji-background-memory", event => {
+      protection?.sample(event.detail, shown && alpha > 0 && !!selected);
+      if (event.detail?.error) {
+        protectionUnavailable = true;
+        protectionMessage(event.detail.error, protectionLevel > 0);
+      } else if (protectionUnavailable && !event.detail?.unavailable && Number.isFinite(event.detail?.mib)) {
+        protectionUnavailable = false;
+        if (protectionLevel > 0) protectionMessage("内存监测已恢复；背景仍保持保护状态，可手动恢复。", true);
+        else { if (protectionNotice) protectionNotice.style.display = "none"; say("背景内存监测已恢复。"); }
+      }
+    });
     let uiTransparency = 20;
     let alpha = 30, animationSetting = null, animationOn = false, visible = !document.hidden && window.__tianjiDesktopVisible !== false, reduced = false;
     try { reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { /* Optional browser preference. */ }
@@ -332,13 +377,13 @@
     }
     /** Applies preferences to one static image or one incremental animation canvas. */
     function refresh() {
-      const shouldShow = shown && alpha > 0;
+      const shouldShow = shown && alpha > 0 && protectionLevel < 2;
       document.documentElement.dataset.backgroundVisible = String(shouldShow);
       document.documentElement.style.setProperty("--ui-panel-alpha", `${100 - uiTransparency}%`);
       layer.style.opacity = String(alpha / 100); layer.style.display = shouldShow ? "block" : "none";
       let src = null;
       canvas.style.opacity = String(alpha / 100);
-      const playing = shouldShow && visible && selected?.animatedBlob && animationOn;
+      const playing = shouldShow && visible && selected?.animatedBlob && animationOn && protectionLevel === 0;
       if (playing && player) {
         player.play(selected.animatedBlob);
         src = staticUrl; // First frame remains visible until the first incremental decode completes.
@@ -384,7 +429,7 @@
         stop();
         if (staticUrl) URL.revokeObjectURL(staticUrl);
         selected = { staticBlob: blob, animatedBlob, builtin };
-        if (builtinButton) builtinButton.setAttribute("aria-pressed", String(builtin === BUILTIN.id)); shown = true; staticUrl = candidate; candidate = null;
+        if (builtinButton) builtinButton.setAttribute("aria-pressed", String(builtin === BUILTIN.id)); clearProtection(); shown = true; staticUrl = candidate; candidate = null;
         animationOn = animatedBlob ? (animationSetting ?? !reduced) : false;
         if (animationRow) animationRow.hidden = !animatedBlob;
         if (animation) { animation.disabled = !animatedBlob; animation.checked = !!animatedBlob && animationOn; }
@@ -496,7 +541,7 @@
       refresh(); savePrefs();
     });
     refresh();
-    if (animation) animation.addEventListener("change", () => { touched=true; animationSetting = animation.checked; animationOn = animationSetting; savePrefs(); refresh(); });
+    if (animation) animation.addEventListener("change", () => { touched=true; const enable = animation.checked; if (enable) clearProtection(); animationSetting = enable; animationOn = enable; animation.checked = enable; savePrefs(); refresh(); });
     if (removeButton) removeButton.addEventListener("click", async () => {
       touched=true;
       const token = ++generation; removeButton.disabled = true;

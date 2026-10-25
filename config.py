@@ -62,6 +62,22 @@ class LoggingStartup(BaseModel):
     console_output: bool = True
 
 
+class BackgroundProtectionStartup(BaseModel):
+    """桌面背景的持续高内存保护；仅临时降级显示，不保存外观偏好。"""
+
+    enabled: bool = True
+    interval_seconds: int = Field(default=15, ge=5, le=300)
+    consecutive_samples: int = Field(default=3, ge=2, le=20)
+    pause_mib: int = Field(default=512, ge=64, le=32768)
+    hide_mib: int = Field(default=768, ge=64, le=65536)
+
+    @model_validator(mode="after")
+    def validate_thresholds(self):
+        if self.hide_mib <= self.pause_mib:
+            raise ValueError("关闭背景阈值必须大于暂停动画阈值")
+        return self
+
+
 class StartupConfig(BaseModel):
     """区分进程启动配置与界面热更新的抓包策略。"""
 
@@ -70,6 +86,9 @@ class StartupConfig(BaseModel):
     mcp: MCPStartup = Field(default_factory=MCPStartup)
     extensions: ExtensionsStartup = Field(default_factory=ExtensionsStartup)
     logging: LoggingStartup = Field(default_factory=LoggingStartup)
+    background_protection: BackgroundProtectionStartup = Field(
+        default_factory=BackgroundProtectionStartup
+    )
 
 
 def load_startup(path: Path | None = None) -> StartupConfig:

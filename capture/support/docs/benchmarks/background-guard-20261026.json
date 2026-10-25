@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-26",
+  "runtime": "macOS / PyWebView Cocoa / WKWebView",
+  "sampling": {
+    "metric": "RUSAGE_INFO_V2.ri_phys_footprint",
+    "own_window_pid_resolved": true,
+    "actual_sample_mib": 273.72113037109375,
+    "actual_timer_interval_seconds": 15,
+    "timer_delivery_passed": true
+  },
+  "config": {
+    "pause_mib": 512,
+    "hide_mib": 768,
+    "consecutive_samples": 3,
+    "interval_seconds": 15
+  },
+  "synthetic_high_mib": 900,
+  "checks": {
+    "three_samples_pause_and_static_frame": true,
+    "three_further_samples_hide": true,
+    "low_sample_no_automatic_resume": true,
+    "manual_restore": true,
+    "saved_appearance_json_unchanged": true,
+    "five_themes": true,
+    "viewport_widths": [
+      1280,
+      900,
+      600
+    ],
+    "list_search_filters_details_mock_replay_menus": true,
+    "page_script_errors": []
+  },
+  "limits": [
+    "High values are synthetic; did not allocate 900 MiB.",
+    "No multi-hour real threshold stress, forced unresponsive renderer, or cross-version private API compatibility test.",
+    "Temporary appearance/capture/browser storage; no real business requests or service restart."
+  ]
+}

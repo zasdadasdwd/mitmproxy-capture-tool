@@ -84,8 +84,9 @@ test("GIF framing retains only the first image and appends trailer", () => {
 
 test("initialization restores without rewriting IndexedDB, enables controls, then deletes saved background", async () => {
   const previous = { document: globalThis.document, window: globalThis.window, indexedDB: globalThis.indexedDB,
-    localStorage: globalThis.localStorage, BackgroundAnimation: globalThis.BackgroundAnimation, fetch: globalThis.fetch, Image: globalThis.Image, URL: globalThis.URL };
+    localStorage: globalThis.localStorage, BackgroundMemoryProtection:globalThis.BackgroundMemoryProtection, BackgroundAnimation: globalThis.BackgroundAnimation, fetch: globalThis.fetch, Image: globalThis.Image, URL: globalThis.URL };
   const store = { current: { staticBlob: new Blob([new Uint8Array([1])], { type: "image/png" }), animatedBlob: null }, records: new Map() };
+  globalThis.BackgroundMemoryProtection = require("../../../web/background-protection.js").BackgroundMemoryProtection;
   let playback;
   globalThis.BackgroundAnimation = {BackgroundPlayer: class {
     constructor(canvas,callbacks){this.canvas=canvas;this.callbacks=callbacks;playback=this;}
@@ -250,6 +251,25 @@ test("initialization restores without rewriting IndexedDB, enables controls, the
     assert.equal(playback.canvas.width, 0);
     els.get("appearanceBackgroundOpacity").value = "30";
     await els.get("appearanceBackgroundOpacity").emit("input");
+    windowListeners["tianji-background-memory"]({detail:{unavailable:true,error:"监测暂不可用"}});
+    assert.ok(document.body.children.find(x=>x.id==="backgroundMemoryNotice"));
+    windowListeners["tianji-background-memory"]({detail:{pid:123,mib:100,settings:{enabled:true,interval_seconds:15,consecutive_samples:3,pause_mib:512,hide_mib:768}}});
+    assert.equal(document.body.children.find(x=>x.id==="backgroundMemoryNotice").style.display,"none","successful sampling clears obsolete unavailable warning");
+    const writesBeforeProtection = puts;
+    const sample = {pid:123,mib:900,settings:{enabled:true,interval_seconds:15,consecutive_samples:3,pause_mib:512,hide_mib:768}};
+    for(let i=0;i<3;i++)windowListeners["tianji-background-memory"]({detail:sample});
+    assert.equal(playback.source, null, "high memory pauses animation");
+    assert.equal(playback.canvas.width,0);
+    assert.match(document.body.children[0].src,/^blob:test-/, "pause retains static first frame");
+    for(let i=0;i<3;i++)windowListeners["tianji-background-memory"]({detail:sample});
+    assert.equal(document.body.children[0].src,undefined,"second stage detaches static background");
+    assert.equal(puts,writesBeforeProtection,"protection must not write gallery or preferences");
+    windowListeners.pageshow();
+    assert.equal(playback.source,null,"visibility restore does not bypass protection");
+    const notice=document.body.children.find(x=>x.id==="backgroundMemoryNotice");
+    await notice.children[1].emit("click");
+    assert.ok(playback.source,"explicit recovery resumes original playback preference");
+    assert.equal(puts,writesBeforeProtection,"manual protection recovery does not persist preferences");
     windowListeners.pagehide();
     assert.equal(document.body.children[0].src, undefined);
     assert.ok(revoked.length > 0);

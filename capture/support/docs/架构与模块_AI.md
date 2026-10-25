@@ -87,3 +87,5 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 `web/background-player.js` 以压缩帧索引、单帧静态解码和 Canvas 合成播放 GIF/WebP；`appearance-background.js` 负责静态/动画层切换、偏好及生命周期。原始图库数据仍由原存储层管理；播放器不读取请求、修改业务、缓存整个解码帧列表或创建多个动画实例。暂停/隐藏/替换/关闭释放调度、Canvas 像素、索引及 GIF 恢复快照。
 
 桌面外壳 `bind_background_visibility` 将最小化/恢复状态发送给背景模块，作为页面可见性的补充；不通过定时读取请求数据判断窗口状态，也不修改用户外观偏好。
+
+`desktop/background_memory.py` 负责当前窗口 WebKit PID 与本机 footprint 采样，单线程和有界消息投递；`web/background-protection.js` 负责连续阈值状态机，`appearance-background.js` 将保护级别仅应用到运行时渲染和提示。监测不访问请求数据、不修改后台策略及图库偏好。

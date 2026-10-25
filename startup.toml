@@ -28,3 +28,11 @@ hook_modules = []
 # 是否把代理/Hook 与桌面后台日志输出到 PyCharm Run 或启动终端。
 # false 仅关闭镜像，日志文件仍保留；修改后完整重启工作台生效。
 console_output = true
+
+[background_protection]
+# 仅桌面 App：WebKit 持续高内存时先暂停动画，再临时关闭背景；不删除图片。
+enabled = true
+interval_seconds = 15
+consecutive_samples = 3
+pause_mib = 512
+hide_mib = 768
