@@ -1,0 +1,512 @@
+{
+  "date": "2026-10-26",
+  "environment": {
+    "platform": "macOS-15.8.1-arm64-arm-64bit",
+    "browser": "PyWebView Cocoa / WKWebView",
+    "viewport": "1280x800",
+    "asset": "wind-blink.webp 1280x720,150 frames,6 seconds",
+    "memory_metric": "vmmap Physical footprint MiB",
+    "data": "isolated temporary browser storage; no capture/proxy API"
+  },
+  "playback_120s": {
+    "completed": true,
+    "samples": [
+      {
+        "stage": "baseline",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 28.4
+          }
+        ]
+      },
+      {
+        "stage": "play-5s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 95.4
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-10s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 120.6
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-15s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 104.5
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-20s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 107.2
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-25s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 125.4
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-30s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 109.2
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-35s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 106.0
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-40s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 101.1
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-45s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 102.1
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-50s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 119.2
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-55s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 114.2
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-60s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 129.5
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-65s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 130.1
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-70s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 123.3
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-75s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 104.6
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-80s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 102.7
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-85s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 122.8
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-90s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 122.5
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-95s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 118.4
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-100s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 118.7
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-105s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 124.6
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-110s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 108.0
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-115s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 108.7
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "play-120s",
+        "memory": [
+          {
+            "pid": 92868,
+            "MiB": 114.5
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      }
+    ],
+    "subsequent_native_minimization": "initial lifecycle attempt did not minimize the native window; do not count that phase as passed"
+  },
+  "lifecycle_5s": {
+    "completed": true,
+    "samples": [
+      {
+        "stage": "baseline",
+        "memory": [
+          {
+            "pid": 93650,
+            "MiB": 43.1
+          }
+        ]
+      },
+      {
+        "stage": "play-5s",
+        "memory": [
+          {
+            "pid": 93650,
+            "MiB": 100.2
+          }
+        ],
+        "state": {
+          "errors": [],
+          "canvas": 1280,
+          "playing": true,
+          "hidden": false,
+          "src": true,
+          "status": "背景已保存并显示。"
+        }
+      },
+      {
+        "stage": "minimize-restore-bridge",
+        "native_minimized": false,
+        "released": true,
+        "resumed": true
+      },
+      {
+        "frames": {
+          "samples": 426,
+          "p95": 18,
+          "max": 771,
+          "over50": 1,
+          "errors": []
+        }
+      },
+      {
+        "stage": "after-12-restarts",
+        "memory": [
+          {
+            "pid": 93650,
+            "MiB": 190.0
+          }
+        ]
+      },
+      {
+        "stage": "synthetic-gif-pixels",
+        "colors": [
+          "[0, 255, 0, 255]",
+          "[255, 0, 0, 255]"
+        ]
+      },
+      {
+        "stage": "closed",
+        "memory": [
+          {
+            "pid": 93650,
+            "MiB": 64.6
+          }
+        ],
+        "errors": []
+      }
+    ]
+  },
+  "limits": [
+    "Not a multi-hour idle reproduction or proof of zero leaks.",
+    "OS minimize refused in test session; production PyWebView event bridge exercised through minimized/restored events.",
+    "rAF intervals include disruptive vmmap sampling and window transitions, not animation source frame rate.",
+    "No real business replay or changes to current proxy/processes."
+  ]
+}

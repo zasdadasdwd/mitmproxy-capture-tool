@@ -81,3 +81,9 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 ### Protobuf 正文查看
 
 `web/protobuf-viewer.js` 负责有界标准 wire 解码，`web/protobuf-schema.js` 与本地 vendored protobuf.js 负责可选的自定义定义。`request-viewer.js` 按需读取现有详情 API 的 `decoded_b64/body_b64` 并控制迟到回调与缓存；不从 `body_text` 重建二进制，不写回请求或调用重放。使用及限制见[Protobuf解析](Protobuf解析.md)。
+
+### 背景动画资源
+
+`web/background-player.js` 以压缩帧索引、单帧静态解码和 Canvas 合成播放 GIF/WebP；`appearance-background.js` 负责静态/动画层切换、偏好及生命周期。原始图库数据仍由原存储层管理；播放器不读取请求、修改业务、缓存整个解码帧列表或创建多个动画实例。暂停/隐藏/替换/关闭释放调度、Canvas 像素、索引及 GIF 恢复快照。
+
+桌面外壳 `bind_background_visibility` 将最小化/恢复状态发送给背景模块，作为页面可见性的补充；不通过定时读取请求数据判断窗口状态，也不修改用户外观偏好。

@@ -269,9 +269,17 @@
     const fileInput = get("appearanceBackgroundFile"), removeButton = get("appearanceBackgroundRemove"), opacity = get("appearanceBackgroundOpacity"), percent = get("appearanceBackgroundPercent"), animation = get("appearanceBackgroundAnimation"), animationRow = get("appearanceBackgroundAnimationRow"), status = get("appearanceBackgroundStatus");
     const say = message => { if (status) status.textContent = message; };
     document.addEventListener("desktop-appearance-error", event => say(`桌面外观操作失败：${event.detail?.message || event.detail || "未知错误"}`));
-    let selected = null, liveUrl = null, staticUrl = null, animationFrameUrl = null, generation = 0, shown = false, touched = false;
+    let selected = null, liveUrl = null, staticUrl = null, generation = 0, shown = false, touched = false;
+    let player = null;
+    const canvas = document.createElement("canvas"); canvas.id = "appearanceAnimationCanvas";
+    Object.assign(canvas.style, { position: "fixed", inset: "0", width: "100vw", height: "100vh", objectFit: "cover", zIndex: "0", pointerEvents: "none", display: "none" });
+    canvas.setAttribute("aria-hidden", "true"); document.body.append(canvas);
+    if (globalThis.BackgroundAnimation?.BackgroundPlayer) player = new BackgroundAnimation.BackgroundPlayer(canvas, {
+      onFrame: () => { layer.style.display = "none"; },
+      onError: error => { animationOn = false; if (animation) animation.checked = false; refresh(); say(`动画播放失败，已显示静态首帧：${error.message}`); }
+    });
     let uiTransparency = 20;
-    let alpha = 30, animationSetting = null, animationOn = false, visible = !document.hidden, reduced = false;
+    let alpha = 30, animationSetting = null, animationOn = false, visible = !document.hidden && window.__tianjiDesktopVisible !== false, reduced = false;
     try { reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { /* Optional browser preference. */ }
     function prefs() {
       try {
@@ -310,10 +318,10 @@
       if(ok){selected.id=payload.id;selected.builtin=payload.builtin || null;if(gallery)gallery.value=payload.id || "";if(deleteGallery)deleteGallery.disabled=!payload.id || !!payload.builtin;}
       return ok;
     }
-    /** Detaches the current source and releases the transient animation URL. */
+    /** Detaches the static source and releases incremental playback buffers. */
     function stop() {
       layer.removeAttribute("src"); liveUrl = null;
-      if (animationFrameUrl) { URL.revokeObjectURL(animationFrameUrl); animationFrameUrl = null; }
+      player?.stop();
     }
     let dbQueue = Promise.resolve();
     /** Serializes writes and ignores operations superseded by a newer user action. */
@@ -322,22 +330,26 @@
       dbQueue = operation.catch(() => {});
       return operation;
     }
-    /** Applies opacity and playback preferences to the single background image layer. */
+    /** Applies preferences to one static image or one incremental animation canvas. */
     function refresh() {
       const shouldShow = shown && alpha > 0;
       document.documentElement.dataset.backgroundVisible = String(shouldShow);
       document.documentElement.style.setProperty("--ui-panel-alpha", `${100 - uiTransparency}%`);
       layer.style.opacity = String(alpha / 100); layer.style.display = shouldShow ? "block" : "none";
       let src = null;
-      if (shouldShow && visible) {
-        if (selected?.animatedBlob && animationOn) {
-          if (!animationFrameUrl) animationFrameUrl = URL.createObjectURL(selected.animatedBlob);
-          src = animationFrameUrl;
-        } else src = staticUrl;
+      canvas.style.opacity = String(alpha / 100);
+      const playing = shouldShow && visible && selected?.animatedBlob && animationOn;
+      if (playing && player) {
+        player.play(selected.animatedBlob);
+        src = staticUrl; // First frame remains visible until the first incremental decode completes.
+        if (canvas.style.display === "block") layer.style.display = "none";
+      } else {
+        player?.stop();
+        if (shouldShow && visible) src = staticUrl;
+        if (playing && !player) say("浏览器不支持低内存动画播放，当前显示静态首帧。");
       }
       if (src !== liveUrl) {
         layer.removeAttribute("src");
-        if (liveUrl === animationFrameUrl && animationFrameUrl) { URL.revokeObjectURL(animationFrameUrl); animationFrameUrl = null; }
         liveUrl = src;
         if (src) layer.src = src;
       }
@@ -536,9 +548,17 @@
       if(gallery)gallery.value="";if(deleteGallery)deleteGallery.disabled=true;
       refresh();
     }
-    document.addEventListener("visibilitychange", () => { visible = !document.hidden; if (!visible) stop(); else refresh(); });
-    window.addEventListener("pagehide", stop);
-    window.addEventListener("pageshow", () => { visible = !document.hidden; refresh(); });
+    function updateVisibility() {
+      visible = !document.hidden && window.__tianjiDesktopVisible !== false;
+      if (!visible) stop(); else refresh();
+    }
+    document.addEventListener("visibilitychange", updateVisibility);
+    window.addEventListener("tianji-desktop-visibility", event => {
+      window.__tianjiDesktopVisible = event.detail?.visible !== false;
+      updateVisibility();
+    });
+    window.addEventListener("pagehide", () => { visible = false; stop(); });
+    window.addEventListener("pageshow", updateVisibility);
     let media = null; try { media = window.matchMedia("(prefers-reduced-motion: reduce)"); } catch { /* Optional browser preference. */ }
     media?.addEventListener?.("change", event => { reduced = event.matches; if (animationSetting === null) { animationOn = !reduced; if (animation) animation.checked = animationOn; } refresh(); });
     if(window.DesktopAppearance?.active) {

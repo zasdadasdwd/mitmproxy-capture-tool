@@ -113,6 +113,8 @@ def test_desktop_restart_preserves_website_storage(monkeypatch):
     shell = Mock()
     from unittest.mock import MagicMock
     shell.events.loaded = MagicMock()
+    shell.events.minimized = MagicMock()
+    shell.events.restored = MagicMock()
     webview = SimpleNamespace(settings={}, create_window=Mock(return_value=shell), start=Mock())
     monkeypatch.setattr(sys, "argv", ["app_main.py"])
     monkeypatch.setattr(sys, "platform", "darwin")
@@ -161,3 +163,30 @@ def test_console_switch_defaults_on_for_older_config(tmp_path):
     path = tmp_path / "startup.toml"
     path.write_text("[web]\nport = 8765\n")
     assert load_startup(path).logging.console_output is True
+
+
+def test_native_minimize_visibility_is_republished_after_page_load():
+    from capture.desktop.window import bind_background_visibility
+
+    class Event:
+        def __init__(self):
+            self.handlers = []
+
+        def __iadd__(self, handler):
+            self.handlers.append(handler)
+            return self
+
+        def fire(self):
+            for handler in self.handlers:
+                handler()
+
+    events = SimpleNamespace(loaded=Event(), minimized=Event(), restored=Event())
+    window = SimpleNamespace(events=events, evaluate_js=Mock())
+    bind_background_visibility(window)
+    events.minimized.fire()
+    window.evaluate_js.assert_not_called()
+    events.loaded.fire()
+    assert "visible:false" in window.evaluate_js.call_args.args[0]
+    events.restored.fire()
+    assert "__tianjiDesktopVisible=true" in window.evaluate_js.call_args.args[0]
+    assert "tianji-desktop-visibility" in window.evaluate_js.call_args.args[0]

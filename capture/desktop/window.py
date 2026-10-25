@@ -118,6 +118,32 @@ class DesktopLinks(DesktopAppearanceAPI):
         return webbrowser.open(url, new=2)
 
 
+def bind_background_visibility(window):
+    """WebKit 最小化时可能仍报告可见，显式暂停背景并在恢复后恢复偏好。"""
+    state = {"visible": True, "ready": False}
+
+    def publish():
+        value = "true" if state["visible"] else "false"
+        window.evaluate_js(
+            f"window.__tianjiDesktopVisible={value};"
+            "window.dispatchEvent(new CustomEvent('tianji-desktop-visibility',"
+            f"{{detail:{{visible:{value}}}}}));"
+        )
+
+    def change(visible):
+        state["visible"] = visible
+        if state["ready"]:
+            publish()
+
+    def loaded():
+        state["ready"] = True
+        publish()
+
+    window.events.loaded += loaded
+    window.events.minimized += lambda: change(False)
+    window.events.restored += lambda: change(True)
+
+
 def prepare_app_identity():
     """在 Cocoa 注册应用前设置本进程的名称，避免 Dock 使用解释器的 Python 名称。"""
     import Foundation
@@ -175,6 +201,7 @@ def main():
             text_select=True,
             js_api=DesktopLinks(),
         )
+        bind_background_visibility(window)
         window.events.loaded += lambda: print("天机阁窗口页面已加载", flush=True)
         # Cocoa 的默认隐私模式会在启动时清空 localStorage 与 IndexedDB。
         webview.start(set_app_identity, gui="cocoa", debug=False, private_mode=False)

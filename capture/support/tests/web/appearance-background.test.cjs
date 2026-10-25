@@ -84,8 +84,14 @@ test("GIF framing retains only the first image and appends trailer", () => {
 
 test("initialization restores without rewriting IndexedDB, enables controls, then deletes saved background", async () => {
   const previous = { document: globalThis.document, window: globalThis.window, indexedDB: globalThis.indexedDB,
-    localStorage: globalThis.localStorage, fetch: globalThis.fetch, Image: globalThis.Image, URL: globalThis.URL };
+    localStorage: globalThis.localStorage, BackgroundAnimation: globalThis.BackgroundAnimation, fetch: globalThis.fetch, Image: globalThis.Image, URL: globalThis.URL };
   const store = { current: { staticBlob: new Blob([new Uint8Array([1])], { type: "image/png" }), animatedBlob: null }, records: new Map() };
+  let playback;
+  globalThis.BackgroundAnimation = {BackgroundPlayer: class {
+    constructor(canvas,callbacks){this.canvas=canvas;this.callbacks=callbacks;playback=this;}
+    play(source){this.source=source;this.canvas.width=1;this.canvas.height=1;this.canvas.style.display="block";this.callbacks.onFrame();}
+    stop(){this.source=null;this.canvas.width=0;this.canvas.height=0;this.canvas.style.display="none";}
+  }};
   let puts = 0, deletes = 0, ids = 0, fetches = 0, failPut = false, abortPutAfterSuccess = false; const revoked = [], windowListeners = {}, documentListeners = {}, mediaListeners = [], images = [];
   class Element {
     constructor(tag = "div") { this.tagName = tag; this.style = {setProperty(k,v){this[k]=v;}}; this.dataset = {}; this.attributes = {}; this.listeners = {}; this.children = []; this.value = ""; this.disabled = false; this.hidden = false; this.checked = false; }
@@ -220,17 +226,28 @@ test("initialization restores without rewriting IndexedDB, enables controls, the
     assert.equal(els.get("appearanceBackgroundAnimation").checked, false, "explicit pause survives system preference changes");
     els.get("appearanceBackgroundAnimation").checked = true;
     await els.get("appearanceBackgroundAnimation").emit("change");
-    assert.notEqual(document.body.children[0].src, activeUrl);
+    assert.equal(document.body.children[0].src, activeUrl, "animation reuses the static URL; no full-animation URL is allocated");
+    assert.ok(playback.source, "incremental animation is running");
+    windowListeners["tianji-desktop-visibility"]({detail:{visible:false}});
+    assert.equal(document.hidden, false, "native minimize can occur while WebKit still reports visible");
+    assert.equal(playback.canvas.width, 0, "native minimize releases canvas storage");
+    assert.equal(playback.source, null);
+    documentListeners.visibilitychange();
+    assert.equal(playback.source, null, "browser visibility cannot override a minimized native window");
+    windowListeners["tianji-desktop-visibility"]({detail:{visible:true}});
+    assert.ok(playback.source, "restore resumes the user's animation preference");
     let animatedUrl = document.body.children[0].src;
     document.hidden = true; documentListeners.visibilitychange();
     assert.equal(document.body.children[0].src, undefined);
-    assert.ok(revoked.includes(animatedUrl), "hidden document revokes animation URL");
+    assert.equal(playback.source, null, "hidden document releases animation source");
+    assert.equal(playback.canvas.width, 0, "hidden document releases canvas backing storage");
     document.hidden = false; documentListeners.visibilitychange();
     animatedUrl = document.body.children[0].src;
     els.get("appearanceBackgroundOpacity").value = "0";
     await els.get("appearanceBackgroundOpacity").emit("input");
     assert.equal(document.body.children[0].src, undefined, "zero opacity detaches animation source");
-    assert.ok(revoked.includes(animatedUrl), "zero opacity revokes animation URL");
+    assert.equal(playback.source, null, "zero opacity releases animation source");
+    assert.equal(playback.canvas.width, 0);
     els.get("appearanceBackgroundOpacity").value = "30";
     await els.get("appearanceBackgroundOpacity").emit("input");
     windowListeners.pagehide();
