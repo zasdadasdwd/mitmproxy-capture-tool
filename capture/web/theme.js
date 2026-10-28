@@ -31,6 +31,16 @@ window.addEventListener("pywebviewready", () => {
   window.DesktopAppearance?.restoreTheme?.();
 });
 
+/** 预览缩略图共用真实主题变量，菜单和设置卡片保持相同配色。 */
+function createThemeSample(theme, compact = false) {
+  const preview = document.createElement("span");
+  preview.className = "theme-card-sample" + (compact ? " theme-menu-sample" : "");
+  preview.dataset.previewTheme = theme.id;
+  preview.setAttribute("aria-hidden", "true");
+  for (let i = 0; i < 3; i++) preview.append(document.createElement("i"));
+  return preview;
+}
+
 /** 各页面共用原生按钮菜单，主题切换不改变页面状态或查询条件。 */
 function initThemePicker(button) {
   if (!button || button.dataset.themePicker) return;
@@ -50,7 +60,12 @@ function initThemePicker(button) {
   const items = APPEARANCE_THEMES.map(theme => {
     const item = document.createElement("button");
     item.type = "button";
-    item.textContent = theme.name;
+    const label = document.createElement("span"); label.textContent = theme.name;
+    const check = document.createElement("span"); check.className = "theme-menu-check";
+    check.setAttribute("aria-hidden", "true");
+    item.append(createThemeSample(theme, true), label, check);
+    item.setAttribute("aria-label", `${theme.name}，${theme.description}`);
+    item.title = theme.description;
     item.setAttribute("role", "menuitemradio");
     item.dataset.themeId = theme.id;
     item.onclick = () => { applyTheme(theme.id); close(); button.focus(); };
@@ -109,10 +124,7 @@ function initThemeCards(container) {
     card.type = "button";
     card.className = "theme-card";
     card.dataset.previewTheme = theme.id;
-    const preview = document.createElement("span");
-    preview.className = "theme-card-sample";
-    preview.setAttribute("aria-hidden", "true");
-    for (let i = 0; i < 3; i++) preview.append(document.createElement("i"));
+    const preview = createThemeSample(theme);
     const name = document.createElement("strong"); name.textContent = theme.name;
     const note = document.createElement("small"); note.textContent = theme.description;
     card.append(preview, name, note);

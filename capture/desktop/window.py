@@ -15,6 +15,7 @@ import httpx
 from capture.console_output import ConsoleLogRelay
 from capture.desktop.appearance import DesktopAppearanceAPI
 from capture.desktop.background_memory import BackgroundMemoryMonitor
+from capture.desktop.frontend import frontend_revision
 from config import DATA, ROOT, load_startup
 
 
@@ -194,9 +195,10 @@ def main():
         webview.settings["ALLOW_DOWNLOADS"] = True
         # 新页面链接在 WebKit 内打开，完整查看、说明和分析不调用浏览器。
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
+        revision = frontend_revision()
         window = webview.create_window(
             "天机阁 · 观流溯源，洞悉天机",
-            backend.url + "/",
+            backend.url + "/?ui_revision=" + revision,
             width=1440,
             height=900,
             min_size=(720, 480),
@@ -209,7 +211,7 @@ def main():
         window.events.loaded += memory_monitor.start
         window.events.closed += memory_monitor.close
         bind_background_visibility(window)
-        window.events.loaded += lambda: print("天机阁窗口页面已加载", flush=True)
+        window.events.loaded += lambda: print(f"天机阁窗口页面已加载 · 界面 {revision}", flush=True)
         # Cocoa 的默认隐私模式会在启动时清空 localStorage 与 IndexedDB。
         webview.start(set_app_identity, gui="cocoa", debug=False, private_mode=False)
     except (RuntimeError, OSError) as exc:

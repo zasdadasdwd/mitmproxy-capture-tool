@@ -51,3 +51,21 @@ test('主题菜单互斥、独立选中、Escape关闭并保留焦点，重复�
   b.onclick();let stopped=false;e.document.dispatchEvent({type:'keydown',key:'Escape',preventDefault(){},stopImmediatePropagation(){stopped=true;}});
   assert.equal(menu.hidden,true);assert.equal(stopped,true);assert.equal(e.document.activeElement,b);
 });
+test('顶部菜单与设置卡片共享五种预览，选择主题不改变其他预览内容',()=>{
+  const e=setup('paper'),parent=e.element(),button=e.element();parent.append(button);
+  e.document.button=button;e.document.cards=e.element();
+  e.run('initThemePicker(document.button);initThemeCards(document.cards)');
+  const menu=button.parentNode.children[1],ids=['light','dark','ocean','paper','graphite'];
+  for(let i=0;i<ids.length;i++){
+    const item=menu.children[i],preview=item.children[0],card=e.document.cards.children[i];
+    assert.equal(preview.dataset.previewTheme,ids[i]);
+    assert.equal(preview.children.length,3);assert.equal(preview.attributes['aria-hidden'],'true');
+    assert.equal(card.children[0].dataset.previewTheme,ids[i]);
+    assert.equal(item.children[1].textContent,card.children[1].textContent);
+    assert.ok(item.attributes['aria-label'].includes(card.children[2].textContent));
+  }
+  menu.children[2].onclick();
+  assert.equal(menu.children[2].attributes['aria-checked'],'true');
+  assert.equal(menu.children[3].attributes['aria-checked'],'false');
+  assert.deepEqual(menu.children.map(item=>item.children[0].dataset.previewTheme),ids);
+});

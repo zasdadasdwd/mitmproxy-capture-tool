@@ -89,3 +89,5 @@ AnalysisManager ──spawn 子进程──→ links/worker.py ──只读 SQLi
 桌面外壳 `bind_background_visibility` 将最小化/恢复状态发送给背景模块，作为页面可见性的补充；不通过定时读取请求数据判断窗口状态，也不修改用户外观偏好。
 
 `desktop/background_memory.py` 负责当前窗口 WebKit PID 与本机 footprint 采样，单线程和有界消息投递；`web/background-protection.js` 负责连续阈值状态机，`appearance-background.js` 将保护级别仅应用到运行时渲染和提示。监测不访问请求数据、不修改后台策略及图库偏好。
+
+`desktop/frontend.py` 为前端文本计算内容版本，用于桌面首页 URL 与加载日志；`backend/static.py` 管理 HTML/CSS/JS 缓存重新验证，保留图片缓存和 ETag/304，不处理业务 API 或外观存储。

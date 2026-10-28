@@ -1,5 +1,6 @@
 :root,
-.theme-card[data-preview-theme="light"] {
+.theme-card[data-preview-theme="light"],
+.theme-menu-sample[data-preview-theme="light"] {
   font-family:
     Inter,
     -apple-system,
@@ -672,7 +673,8 @@ dialog .check {
 
 /* 黑色主题只切换语义变量，不复制整套组件样式。 */
 :root[data-theme="dark"],
-.theme-card[data-preview-theme="dark"] {
+.theme-card[data-preview-theme="dark"],
+.theme-menu-sample[data-preview-theme="dark"] {
   color-scheme: dark;
   --page: #101113;
   --surface: #191b1f;
@@ -700,7 +702,8 @@ dialog .check {
 }
 
 :root[data-theme="ocean"],
-.theme-card[data-preview-theme="ocean"] {
+.theme-card[data-preview-theme="ocean"],
+.theme-menu-sample[data-preview-theme="ocean"] {
   color-scheme: dark;
   --page: #0c1726;
   --surface: #17283b;
@@ -728,7 +731,8 @@ dialog .check {
 }
 
 :root[data-theme="paper"],
-.theme-card[data-preview-theme="paper"] {
+.theme-card[data-preview-theme="paper"],
+.theme-menu-sample[data-preview-theme="paper"] {
   color-scheme: light;
   --page: #f3eee4;
   --surface: #fffcf5;
@@ -756,7 +760,8 @@ dialog .check {
 }
 
 :root[data-theme="graphite"],
-.theme-card[data-preview-theme="graphite"] {
+.theme-card[data-preview-theme="graphite"],
+.theme-menu-sample[data-preview-theme="graphite"] {
   color-scheme: dark;
   --page: #19161f;
   --surface: #26222e;
@@ -847,11 +852,18 @@ body > header { z-index: 60; }
 .theme-picker { position: relative; flex: none; }
 .theme-options {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 65;
-  display: grid; padding: 6px; gap: 3px; min-width: 140px;
+  display: grid; grid-auto-rows: max-content; align-content: start;
+  padding: 6px; gap: 3px; min-width: 200px;
   background: var(--surface); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 8px 24px #0002;
 }
-.theme-options button { text-align: left; border-color: transparent; }
+.theme-options button {
+  display: flex; align-items: center; gap: 10px; height: 40px; min-height: 40px;
+  box-sizing: border-box; padding: 4px 8px; text-align: left; border-color: transparent;
+}
+.theme-menu-check { margin-left: auto; width: 12px; height: 12px; flex: none; opacity: 0; }
+.theme-menu-check::after { content: ""; display: block; width: 4px; height: 8px; margin-left: 3px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.theme-options button[aria-checked="true"] .theme-menu-check { opacity: 1; }
 .theme-options button[aria-checked="true"] { color: var(--blue); background: var(--selection); }
 .theme-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 10px 0 18px; }
 .theme-card { padding: 8px; min-width: 0; background: var(--page); color: var(--text); border: 1px solid var(--border); text-align: left; white-space: normal; }
@@ -862,6 +874,9 @@ body > header { z-index: 60; }
 .theme-card-sample { display: block; height: 42px; padding: 7px 6px 4px 22%; background: linear-gradient(to right, var(--sidebar) 20%, var(--surface) 20%); border: 1px solid var(--border); border-radius: 4px; }
 .theme-card-sample i { display: block; height: 4px; background: var(--border); margin-bottom: 4px; }
 .theme-card-sample i:nth-child(2) { height: 8px; border-left: 3px solid var(--blue); background: var(--selection); }
+.theme-menu-sample { box-sizing: border-box; width: 50px; height: 28px; padding: 4px 4px 2px 14px; flex: none; }
+.theme-menu-sample i { height: 3px; margin-bottom: 3px; }
+.theme-menu-sample i:nth-child(2) { height: 5px; border-left-width: 2px; }
 #appearanceBackgroundBuiltin[aria-pressed="true"] { background: var(--selection); color: var(--blue); border-color: var(--blue); }
 .appearance-background-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 .appearance-background-section button, .background-file-button { height: 32px; min-height: 32px; padding: 6px 11px; font-size: 12px; line-height: 18px; border-radius: 8px; box-sizing: border-box; }
@@ -2906,6 +2921,7 @@ details:not([open]) .vertical-area-handle { display: none; }
   left: var(--floating-left, 8px) !important; top: var(--floating-top, 8px) !important;
   width: var(--floating-width, 200px) !important; min-width: 0 !important;
   max-width: calc(100vw - 16px) !important; min-height: 0 !important;
+  height: max-content !important;
   max-height: var(--floating-height, calc(100dvh - 16px)) !important;
   overflow: auto; box-sizing: border-box; z-index: 100;
 }

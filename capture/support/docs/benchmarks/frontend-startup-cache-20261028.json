@@ -1,0 +1,63 @@
+{
+  "runs": [
+    {
+      "release": "legacy",
+      "stored": null,
+      "previewCount": 0,
+      "height": 608.5,
+      "location": "http://127.0.0.1:52361/",
+      "errors": [],
+      "stage": "seed"
+    },
+    {
+      "release": "updated",
+      "stored": "preserved",
+      "previewCount": 5,
+      "height": 226,
+      "location": "http://127.0.0.1:52361/",
+      "errors": [],
+      "stage": "same-url-restart"
+    },
+    {
+      "release": "updated",
+      "stored": "preserved",
+      "previewCount": 5,
+      "height": 226,
+      "location": "http://127.0.0.1:52361/?ui_revision=actual-new-source",
+      "errors": [],
+      "stage": "revision-url-restart"
+    }
+  ],
+  "network_requests": [
+    "/",
+    "/theme.js?v=v1",
+    "/floating-panels.js?v=v1",
+    "/style.css?v=v1",
+    "/",
+    "/floating-panels.js?v=v2",
+    "/theme.js?v=v2",
+    "/style.css?v=v2",
+    "/?ui_revision=actual-new-source",
+    "/floating-panels.js?v=v2",
+    "/theme.js?v=v2",
+    "/style.css?v=v2"
+  ],
+  "cache_reproduced": false,
+  "actual_app_entry": {
+    "path": "/Users/y/PycharmProjects/PythonProject/app_main.py",
+    "ui_revision": "b0c40612ef444433",
+    "native_cocoa": true,
+    "synthetic_api": true,
+    "temporary_appearance_directory": true,
+    "full_ui_regression_passed": true,
+    "proxy_or_capture_service_started": false
+  },
+  "limitations": [
+    "Fixed URL did not reproduce stale HTML; cache_reproduced=false is preserved.",
+    "User screenshot process was not found at configured 8765; its exact resource version was not measured."
+  ],
+  "tests": {
+    "python": 234,
+    "frontend": 137
+  }
+}

@@ -82,7 +82,7 @@
       const owner = panel.closest("details") || panel;
       const trigger = owner.tagName === "DETAILS" ? owner.querySelector("summary") : panel.id === "filterPanel" ? root.document.getElementById("toggleFilters") : panel.parentElement.querySelector("button");
       if (!trigger) continue;
-      const preferredWidth = panel.id === "filterPanel" ? 650 : panel.classList.contains("replay-menu-panel") || panel.classList.contains("flow-actions-panel") ? 340 : panel.classList.contains("detail-policy-options") ? 280 : panel.classList.contains("theme-options") ? 160 : 200;
+      const preferredWidth = panel.id === "filterPanel" ? 650 : panel.classList.contains("replay-menu-panel") || panel.classList.contains("flow-actions-panel") ? 340 : panel.classList.contains("detail-policy-options") ? 280 : panel.classList.contains("theme-options") ? 220 : 200;
       entries.push({owner, trigger, panel, preferredWidth});
       if (panel.id !== "filterPanel") trigger.setAttribute("aria-haspopup", "menu");
       if (panel.classList.contains("detail-policy-options") || panel.classList.contains("detail-export-options")) {

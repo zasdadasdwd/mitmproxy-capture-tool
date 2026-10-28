@@ -2,7 +2,6 @@
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
-from fastapi.staticfiles import StaticFiles
 
 from capture.backend.api import (
     analysis,
@@ -15,6 +14,7 @@ from capture.backend.api import (
     system,
 )
 from capture.backend.context import lifespan, local_origin
+from capture.backend.static import FrontendStaticFiles
 from config import ROOT
 
 app = FastAPI(title="Capture Workbench", lifespan=lifespan)
@@ -50,4 +50,4 @@ for module in (
 ):
     app.include_router(module.router)
 
-app.mount("/", StaticFiles(directory=ROOT / "capture/web", html=True), name="web")
+app.mount("/", FrontendStaticFiles(directory=ROOT / "capture/web", html=True), name="web")

@@ -124,6 +124,7 @@ def test_desktop_restart_preserves_website_storage(monkeypatch):
     monkeypatch.setitem(sys.modules, "webview", webview)
     module.main()
     assert webview.start.call_args.kwargs["private_mode"] is False
+    assert webview.create_window.call_args.args[1].startswith(backend.url + "/?ui_revision=")
     backend.start.assert_called_once()
     backend.close.assert_called_once()
 

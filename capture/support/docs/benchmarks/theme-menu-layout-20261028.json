@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-28",
+  "runtime": "macOS / PyWebView Cocoa / WKWebView",
+  "initial_window": "900x900",
+  "before": {
+    "menu_height_css_px": 781.5,
+    "item_heights_css_px": [
+      151.09375,
+      151.09375,
+      151.09375,
+      151.109375,
+      151.109375
+    ]
+  },
+  "after": {
+    "menu_height_css_px": 226,
+    "item_heights_css_px": [
+      40,
+      40,
+      40,
+      40,
+      40
+    ],
+    "refits": 15,
+    "height_after_refits_css_px": 226,
+    "compact_color_previews": true
+  },
+  "checks": {
+    "themes": [
+      "light",
+      "dark",
+      "ocean",
+      "paper",
+      "graphite"
+    ],
+    "widths": [
+      1280,
+      900,
+      600
+    ],
+    "bottom_edge_flips_above": true,
+    "short_window_scroll_last_option_selectable": true,
+    "other_menus": [
+      "domain policy",
+      "export",
+      "replay sessions",
+      "more",
+      "filters"
+    ],
+    "synthetic_workbench_regression": true,
+    "frontend_tests_passed": 137,
+    "preview_colors_independent_of_active_theme": true
+  },
+  "limits": [
+    "Synthetic local API and temporary browser/appearance storage.",
+    "No backend, request data, proxy restart, real business replay or memory protection logic changes."
+  ]
+}
